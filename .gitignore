@@ -1,0 +1,32 @@
+# Android / Gradle
+*.apk
+*.aab
+*.ap_
+*.dex
+.gradle/
+build/
+**/build/
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+.cinehax/
+/cinehax/
+
+# Sistema y servidor local Python
+.DS_Store
+Thumbs.db
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+node_modules/
+/android-capacitor/.gradle/
+/android-capacitor/.idea/
+/android-capacitor/.kotlin/
+/android-capacitor/local.properties
+/web/tmdb-config.json
+/web/app-config.json

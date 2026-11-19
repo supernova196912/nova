@@ -1,0 +1,61 @@
+{
+  "manifest_version": 3,
+  "name": "CINENOVA · Filtro de anuncios UnLimPlay",
+  "version": "1.0.0",
+  "description": "Filtra solicitudes de publicidad de UnLimPlay sin sacar el reproductor de CINENOVA.",
+  "permissions": [
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "https://unlimplay.com/*",
+    "https://*.unlimplay.com/*",
+    "http://unlimplay.com/*",
+    "http://*.unlimplay.com/*",
+    "*://*.doubleclick.net/*",
+    "*://*.googlesyndication.com/*",
+    "*://*.googleadservices.com/*",
+    "*://*.imasdk.googleapis.com/*",
+    "*://*.adnxs.com/*",
+    "*://*.popads.net/*",
+    "*://*.popcash.net/*",
+    "*://*.exoclick.com/*",
+    "*://*.juicyads.com/*",
+    "*://*.adsterra.com/*",
+    "*://*.highperformanceformat.com/*",
+    "*://*.monetag.com/*",
+    "*://*.onclickalgo.com/*",
+    "*://*.acscdn.com/*",
+    "*://*.taboola.com/*",
+    "*://*.outbrain.com/*",
+    "*://*.mgid.com/*",
+    "*://*.adform.net/*",
+    "*://*.adsrvr.org/*",
+    "*://*.rubiconproject.com/*",
+    "*://*.pubmatic.com/*",
+    "*://*.openx.net/*",
+    "*://*.criteo.com/*",
+    "*://*.smartadserver.com/*",
+    "*://*.propellerads.com/*",
+    "*://*.clickadu.com/*",
+    "*://*.evadav.com/*",
+    "*://*.trafficstars.com/*",
+    "*://*.hilltopads.com/*",
+    "*://*.googletagservices.com/*",
+    "*://*.adservice.google.com/*",
+    "*://*.adskeeper.com/*",
+    "*://*.adkernel.com/*",
+    "*://*.bashirian.biz/*",
+    "*://*.21wiz.com/*",
+    "*://*.morencius.com/*",
+    "*://*.servetraff.com/*"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "unlimplay_ads",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  }
+}

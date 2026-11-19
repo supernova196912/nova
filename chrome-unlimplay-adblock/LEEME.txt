@@ -1,0 +1,11 @@
+Filtro de red para UnLimPlay en Chrome/Edge
+
+Este filtro imita la lista de dominios que usa la APK y solo bloquea solicitudes de esos dominios cuando las inicia un documento de unlimplay.com. Conserva solicitudes de medios con extensiones comunes (.m3u8, .mp4, .ts y .vtt).
+
+Para probarlo:
+1. Abre chrome://extensions (en Edge: edge://extensions).
+2. Activa el modo de desarrollador.
+3. Selecciona "Cargar descomprimida" y elige esta carpeta.
+4. Recarga CINENOVA y vuelve a abrir el título.
+
+El permiso de red se usa para bloquear solicitudes a los dominios listados. La extensión no lee el contenido de las páginas. Si un anuncio usa un dominio nuevo, puede seguir apareciendo; si un servidor de video usa uno de estos dominios sin una extensión de medio reconocible, podría necesitarse ajustar la regla.

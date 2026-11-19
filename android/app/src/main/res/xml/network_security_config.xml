@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Se permite HTTP en claro porque muchos streams .m3u8/.mp4 y el servidor de desarrollo local
+  (10.0.2.2 / IP de la LAN) no usan HTTPS. En producción restringe esto a los dominios necesarios
+  con <domain-config cleartextTrafficPermitted="true">.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

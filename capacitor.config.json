@@ -1,0 +1,15 @@
+{
+  "appId": "com.nova.cinenova",
+  "appName": "CINENOVA",
+  "webDir": "web",
+  "android": {
+    "path": "android-capacitor",
+    "allowMixedContent": true
+  },
+  "server": {
+    "allowNavigation": [
+      "unlimplay.com",
+      "*.unlimplay.com"
+    ]
+  }
+}

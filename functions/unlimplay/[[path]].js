@@ -107,7 +107,16 @@ export async function onRequest({ request, params }) {
     }
     const proxyOrigin = incomingUrl.origin + "/unlimplay";
     const location = responseHeaders.get("Location");
-    if (location) responseHeaders.set("Location", location.replace("https://unlimplay.com", proxyOrigin));
+    if (location) {
+      try {
+        const redirectUrl = new URL(location, upstreamUrl);
+        if (redirectUrl.hostname === "unlimplay.com") {
+          responseHeaders.set("Location", proxyOrigin + redirectUrl.pathname + redirectUrl.search + redirectUrl.hash);
+        }
+      } catch {
+        // Keep malformed or non-HTTP redirect values unchanged.
+      }
+    }
     const cookies = upstream.headers.getSetCookie?.() || [];
     if (cookies.length) {
       responseHeaders.delete("Set-Cookie");

@@ -55,6 +55,10 @@ En **Settings > Variables and Secrets**, crea `TMDB_API_KEY` como Secret (no com
 
 El comando de build genera `web/app-config.json`, que solo contiene la URL pública del backend. No contiene la clave TMDB. Si Pages ya está conectado al repositorio, después de guardar la configuración inicia un nuevo deployment.
 
+### Descargar la app Android
+
+El botón **Descargar app** de la web apunta a `web/descargas/cinenova-android.apk`. Para activarlo, copia allí la APK `release` firmada antes de subir el cambio a GitHub. No uses `app-debug.apk` para distribuirla y no incluyas el archivo `.jks` ni sus contraseñas en el repositorio. El `.gitignore` permite publicar únicamente esa APK de descarga.
+
 También configura `CINENOVA_ALLOWED_ORIGINS` como variable si usas un origen adicional para la app. El código permite por defecto los orígenes locales de Capacitor (`https://localhost`, `http://localhost`, `capacitor://localhost`). Los sitios web servidos desde el mismo dominio no necesitan CORS.
 
 ## API de TMDB

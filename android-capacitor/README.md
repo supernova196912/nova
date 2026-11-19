@@ -92,7 +92,15 @@ Para Android TV, habilita opciones de desarrollador y depuración de red/ADB, co
 
 ## Crear una versión de distribución
 
-`assembleDebug` crea una APK de desarrollo, no una publicación firmada para Play Store. Para distribuir una versión release, crea una clave de firma, configura las credenciales fuera del repositorio y agrega una configuración de firma release en Gradle. No guardes contraseñas ni archivos de firma privados en Git.
+`assembleDebug` crea una APK de desarrollo. Para distribuir la app desde la web, crea una APK `release` firmada desde Android Studio con **Build > Generate Signed Bundle / APK > APK**, elige el módulo `app` y la variante `release`. Si aún no tienes una clave, créala desde el asistente y guárdala fuera del repositorio. Conserva la misma clave para las siguientes versiones; no subas el `.jks` ni las contraseñas a Git.
+
+Cuando el asistente termine, copia la APK firmada resultante a:
+
+```text
+C:\proyectos\nova\web\descargas\cinenova-android.apk
+```
+
+Después de copiarla, sube el cambio de la página junto con la APK a GitHub para que Cloudflare Pages publique el botón y el archivo. Para actualizar una instalación ya distribuida, incrementa `versionCode` en `app/build.gradle` y firma con la misma clave. La APK `release` firmada reemplaza la `debug`; si el dispositivo ya tiene instalada una `debug`, Android puede exigir desinstalarla primero.
 
 ## Comandos frecuentes
 

@@ -43,8 +43,6 @@ body.tv-mode .detail-panel{padding-left:3%;padding-right:3%}
 body.tv-mode .card{flex-basis:190px;width:190px}
 body.tv-mode .scroller{scroll-snap-type:x proximity}
 body.tv-mode .scroller>.card{scroll-snap-align:start}
-.player-frame.tv-fullscreen{position:fixed;z-index:250;inset:0;width:100vw;height:100vh;max-width:none;aspect-ratio:auto;border-radius:0}
-.player-frame.tv-fullscreen iframe{border-radius:0}
 @media(max-width:767px){
   header{position:sticky;gap:10px;padding:10px 4%}
   header>.logo{font-size:19px}
@@ -248,6 +246,7 @@ footer{margin-top:50px;padding:40px 4% 30px;background:#07071c;color:var(--muted
 #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(100px);background:#fff;color:#111;padding:10px 20px;border-radius:30px;font-size:14px;font-weight:600;transition:transform .3s;z-index:200}
 #toast.show{transform:translateX(-50%) translateY(0)}
 </style>
+<link rel="stylesheet" href="./cinenova-mobile-tv.css">
 </head>
 <body>
 
@@ -276,6 +275,7 @@ footer{margin-top:50px;padding:40px 4% 30px;background:#07071c;color:var(--muted
   </nav>
   <div class="hright">
     <div class="sbox"><input id="q" type="search" placeholder="🔍 Buscar películas, series, actores…" autocomplete="off"><div id="sugg"></div></div>
+    <a class="download-app-btn" href="./descargas/cinenova-android.apk" download aria-label="Descargar CINENOVA para Android">⬇ <span>Descargar app</span></a>
   </div>
 </header>
 
@@ -320,14 +320,21 @@ const GENRES = { movie:{}, tv:{} };
 const ITEMS = new Map();          // datos mínimos para "Mi lista"
 const cleanup = [];
 let routeToken = 0;
+let episodeRequestToken = 0;
 const app = $("#app");
 let isTvMode = false;
+function isNativeApp(){
+  return Boolean((window.Capacitor && window.Capacitor.isNativePlatform?.())
+    || (location.hostname === "localhost" && /Android/i.test(navigator.userAgent || "")));
+}
 function updateDeviceMode(){
   const ua = navigator.userAgent || "";
+  const nativeApp = isNativeApp();
   const tvUa = /Android TV|SmartTV|BRAVIA|AFT|Chromecast|GoogleTV|HbbTV/i.test(ua);
   const forced = new URLSearchParams(location.search).get("tv") === "1";
   const coarseLarge = matchMedia("(min-width: 1024px) and (pointer: coarse)").matches;
   isTvMode = forced || tvUa || coarseLarge;
+  document.body.classList.toggle("native-app", nativeApp);
   document.body.classList.toggle("tv-mode", isTvMode);
 }
 updateDeviceMode();
@@ -688,7 +695,7 @@ async function detail(type, id){
         ${d.tagline ? `<p class="tagline">“${esc(d.tagline)}”</p>` : ""}
         <p class="overview">${esc(d.overview || "Sin sinopsis disponible.")}</p>
         <div class="actions">
-          <button class="btn primary" data-act="play-detail" data-tab="ver" data-target="player-${d.id}">▶ Reproducir</button>
+          <button class="btn primary" data-act="play-detail" data-tab="ver" data-target="player-${d.id}" data-type="${type}" data-id="${d.id}">▶ Reproducir</button>
           <button class="btn ghost ${fav ? "fav-on" : ""}" data-act="fav" data-type="${type}" data-id="${d.id}">${fav ? "✓ En Mi lista" : "+ Mi lista"}</button>
           <button class="btn ghost" data-act="share">↗ Compartir</button>
         </div>
@@ -704,44 +711,75 @@ async function detail(type, id){
     ${type === "tv" ? `<div class="player-controls">
       <label>Temporada <select id="playSeason">${seasonList.map(s => `<option value="${s.season_number}" data-episodes="${s.episode_count}" ${s.season_number === initialSeasonNumber ? "selected" : ""}>${esc(s.name)}</option>`).join("") || '<option value="1" data-episodes="1">Temporada 1</option>'}</select></label>
       <label>Episodio <select id="playEpisode">${Array.from({length:initialEpisodeCount}, (_,i) => `<option value="${i+1}">Episodio ${i+1}</option>`).join("")}</select></label>
+      <button class="btn primary play-current-episode" data-act="play-current-episode" data-id="${d.id}" data-type="tv">▶ Reproducir capítulo</button>
     </div>` : ""}
     <div class="player-frame" id="player-${d.id}"><iframe src="about:blank" width="100%" height="100%" frameBorder="0" allowFullScreen allow="autoplay; fullscreen; picture-in-picture; encrypted-media" referrerPolicy="origin"></iframe></div>
+    ${type === "tv" ? `<section class="episode-browser" aria-label="Capítulos de la serie">
+      <div class="episode-browser-head"><div><h3>Capítulos</h3><p>Elige un episodio para reproducirlo.</p></div>
+        <input id="episodeSearch" class="episode-search" type="search" placeholder="Buscar capítulo por nombre" aria-label="Buscar capítulo por nombre">
+      </div>
+      <div class="episode-list" id="episodeList" aria-live="polite"></div>
+    </section>` : ""}
   </section>
   <section class="detail-panel" id="panel-reparto" role="tabpanel" hidden>${staticRow("Reparto", cast)}</section>
   <section class="detail-panel" id="panel-detalles" role="tabpanel" hidden>
     <section class="block"><h2>Información</h2><div class="info">${info}</div>${kws.length ? `<div style="margin-top:18px"><b class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:1px">Palabras clave</b><div class="kw">${kws.map(k => `<span>${esc(k.name)}</span>`).join("")}</div></div>` : ""}</section>
-    ${seasonList.length ? `<section class="block"><div class="rhead"><h2>Temporadas y episodios</h2><select id="seasonSel">${seasonList.map(s => `<option value="${s.season_number}">${esc(s.name)} (${s.episode_count} ep.)</option>`).join("")}</select></div><div class="eps" id="eps"></div></section>` : ""}
   </section>
   <section class="detail-panel" id="panel-similares" role="tabpanel" hidden>${staticRow("Recomendadas", recs)}${staticRow("Títulos similares", sim)}</section>
   <section class="detail-panel" id="panel-trailer" role="tabpanel" hidden>${staticRow("Tráileres y videos", vids)}</section>`;
-  const playerFrame = $(`#player-${d.id} iframe`);
-  const initialEmbedPath = type === "tv" ? `f/embed/tv/${d.id}/${initialSeasonNumber}/1` : `f/embed/movie/${d.id}`;
-  playerFrame.src = unlimplayUrl(initialEmbedPath);
   $$("[data-detail-tab]").forEach(tab => tab.onclick = () => activateDetailTab(tab.dataset.detailTab));
   requestAnimationFrame(() => { if (isTvMode) $("[data-act='play-detail']")?.focus(); });
   if (type === "tv"){
     const seasonSel = $("#playSeason"), episodeSel = $("#playEpisode"), frame = $(`#player-${d.id} iframe`);
-    const updateEmbed = () => { const selected = seasonSel.selectedOptions[0]; const count = Number(selected?.dataset.episodes || 1); const current = Number(episodeSel.value || 1); episodeSel.innerHTML = Array.from({length:count}, (_,i) => `<option value="${i+1}" ${i+1 === Math.min(current,count) ? "selected" : ""}>Episodio ${i+1}</option>`).join(""); frame.src = unlimplayUrl("f/embed/tv/" + d.id + "/" + seasonSel.value + "/" + episodeSel.value); };
-    seasonSel.onchange = updateEmbed; episodeSel.onchange = updateEmbed;
+    const updateEpisodes = () => {
+      const count = Number(seasonSel.selectedOptions[0]?.dataset.episodes || 1);
+      episodeSel.innerHTML = Array.from({length:count}, (_,i) => `<option value="${i+1}">Episodio ${i+1}</option>`).join("");
+      loadSeason(d.id, seasonSel.value);
+    };
+    seasonSel.onchange = updateEpisodes;
+    $("#episodeSearch").oninput = e => filterEpisodeCards(e.target.value);
+    loadSeason(d.id, initialSeasonNumber);
   }
-  if (seasonList.length){ const sel = $("#seasonSel"); sel.onchange = () => loadSeason(d.id, sel.value); loadSeason(d.id, sel.value); }
 }
 function activateDetailTab(key){
   $$("[data-detail-tab]").forEach(tab => { const active = tab.dataset.detailTab === key; tab.classList.toggle("active", active); tab.setAttribute("aria-selected", String(active)); });
   $$(".detail-panel").forEach(panel => { panel.hidden = panel.id !== `panel-${key}`; });
 }
 async function loadSeason(id, n){
-  const t = routeToken, box = $("#eps");
-  box.innerHTML = '<div class="sentinel"><div class="spinner"></div></div>';
+  const t = routeToken, request = ++episodeRequestToken, box = $("#episodeList");
+  if (!box) return;
+  box.innerHTML = '<p class="episode-empty">Cargando capítulos…</p>';
   try{
     const s = await api(`/tv/${id}/season/${n}`);
-    if (t !== routeToken) return;
-    box.innerHTML = (s.episodes || []).map(e => `<div class="ep">
-      <div class="still">${e.still_path ? `<img loading="lazy" src="${img(e.still_path, "w300")}" alt="">` : `<div class="noimg">Sin imagen</div>`}<span class="epn">E${e.episode_number}</span></div>
-      <div><h4>${e.episode_number}. ${esc(e.name)}</h4>
-      <div class="cmeta">${fmtDate(e.air_date)}${e.runtime ? " · " + e.runtime + " min" : ""}${e.vote_average ? ` · <span class="rating">★ ${score(e.vote_average)}</span>` : ""}</div>
-      <p>${esc(e.overview || "Sin descripción.")}</p></div></div>`).join("") || '<p class="muted">Sin episodios.</p>';
-  }catch(e){ box.innerHTML = '<p class="muted">No se pudo cargar la temporada.</p>'; }
+    if (t !== routeToken || request !== episodeRequestToken) return;
+    box.innerHTML = (s.episodes || []).map(e => `<button class="episode-card" data-act="play-episode" data-type="tv" data-id="${id}" data-season="${n}" data-episode="${e.episode_number}" data-search="${esc(e.name || "").toLowerCase()}">
+      ${e.still_path ? `<img loading="lazy" src="${img(e.still_path, "w300")}" alt="">` : '<span class="episode-thumb-fallback"></span>'}
+      <span><strong>E${e.episode_number}. ${esc(e.name || "Episodio " + e.episode_number)}</strong><small>${fmtDate(e.air_date)}${e.runtime ? " · " + e.runtime + " min" : ""}</small></span>
+      <span class="episode-play-icon" aria-hidden="true">▶</span>
+    </button>`).join("") || '<p class="episode-empty">No hay capítulos disponibles para esta temporada.</p>';
+    filterEpisodeCards($("#episodeSearch")?.value || "");
+  }catch(e){ if (t === routeToken && request === episodeRequestToken) box.innerHTML = '<p class="episode-empty">No se pudieron cargar los capítulos. Vuelve a elegir la temporada para reintentar.</p>'; }
+}
+function filterEpisodeCards(query){
+  const q = String(query || "").trim().toLocaleLowerCase("es");
+  const cards = $$(".episode-card", $("#episodeList") || document);
+  let visible = 0;
+  cards.forEach(card => { const match = !q || card.dataset.search.includes(q); card.hidden = !match; if (match) visible++; });
+  let empty = $("#episodeList .episode-empty");
+  if (cards.length && !visible){
+    if (!empty){ empty = document.createElement("p"); empty.className = "episode-empty"; $("#episodeList").append(empty); }
+    empty.textContent = "No hay capítulos que coincidan con la búsqueda.";
+    empty.hidden = false;
+  } else if (empty && cards.length) empty.hidden = true;
+}
+function startDetailPlayback(id, type, season = 1, episode = 1){
+  const player = document.getElementById(`player-${id}`), frame = player?.querySelector("iframe");
+  if (!player || !frame) return;
+  const path = type === "tv" ? `f/embed/tv/${id}/${season}/${episode}` : `f/embed/movie/${id}`;
+  const src = unlimplayUrl(path);
+  if (frame.dataset.loadedSrc !== src){ frame.dataset.loadedSrc = src; frame.src = src; }
+  player.scrollIntoView({behavior:"smooth", block:"start"});
+  if (isTvMode || isNativeApp()) player.classList.add("player-fullscreen");
 }
 
 async function person(id){
@@ -837,17 +875,20 @@ function openModal(html, cls = "", locked = false){
 }
 function closeModal(){ if (modalLocked) return; $("#modal").classList.add("hidden"); $("#mbody").innerHTML = ""; }
 function exitPlayerFullscreen(){
-  $$(".player-frame.tv-fullscreen").forEach(player => player.classList.remove("tv-fullscreen"));
+  $$(".player-frame.player-fullscreen").forEach(player => player.classList.remove("player-fullscreen"));
   if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
 }
 function handleAppBack(){
   if (!$("#modal").classList.contains("hidden")){ closeModal(); return true; }
-  if (document.fullscreenElement || $(".player-frame.tv-fullscreen")){ exitPlayerFullscreen(); return true; }
+  if (document.fullscreenElement || $(".player-frame.player-fullscreen")){ exitPlayerFullscreen(); return true; }
   if (routeTrail.length){ skipRouteTrailPush = true; location.hash = routeTrail.pop(); return true; }
   if (location.hash && location.hash !== "#/" && location.hash !== "#"){ skipRouteTrailPush = true; routeTrail.length = 0; location.hash = "#/"; return true; }
   return false;
 }
 window.onAndroidBackPressed = handleAppBack;
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement) $$(".player-frame.player-fullscreen").forEach(player => player.classList.remove("player-fullscreen"));
+});
 $("#mclose").onclick = closeModal;
 $("#modal").onclick = e => { if (e.target.id === "modal") closeModal(); };
 document.addEventListener("keydown", e => {
@@ -882,9 +923,16 @@ document.addEventListener("click", e => {
     const a = act.dataset.act;
     if (a === "play-detail"){
       activateDetailTab(act.dataset.tab);
-      const player = document.getElementById(act.dataset.target);
-      player?.scrollIntoView({behavior:"smooth",block:"start"});
-      if (isTvMode && player){ player.classList.add("tv-fullscreen"); if (player.requestFullscreen) player.requestFullscreen().catch(() => {}); }
+      const season = Number($("#playSeason")?.value || 1), episode = Number($("#playEpisode")?.value || 1);
+      startDetailPlayback(act.dataset.id, act.dataset.type, season, episode);
+    }
+    if (a === "play-current-episode" || a === "play-episode"){
+      const season = Number(act.dataset.season || $("#playSeason")?.value || 1);
+      const episode = Number(act.dataset.episode || $("#playEpisode")?.value || 1);
+      if ($("#playSeason")) $("#playSeason").value = String(season);
+      if ($("#playEpisode")) $("#playEpisode").value = String(episode);
+      activateDetailTab("ver");
+      startDetailPlayback(act.dataset.id, "tv", season, episode);
     }
     if (a === "trailer") playTrailer(act.dataset.type, act.dataset.id);
     if (a === "video") playVideo(act.dataset.key);

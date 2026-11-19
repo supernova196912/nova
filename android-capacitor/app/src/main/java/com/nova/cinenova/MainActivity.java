@@ -2,6 +2,7 @@ package com.nova.cinenova;
 
 import android.net.Uri;
 import android.os.Bundle;
+import android.content.pm.ActivityInfo;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebResourceRequest;
@@ -34,6 +35,7 @@ public class MainActivity extends BridgeActivity {
     private BridgeWebChromeClient fullscreenChromeClient;
     private BridgeWebChromeClient.CustomViewCallback fullscreenCallback;
     private int previousSystemUiVisibility;
+    private int previousRequestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
     private String configuredApiHost = "";
 
     @Override
@@ -79,6 +81,8 @@ public class MainActivity extends BridgeActivity {
                 }
                 fullscreenView = view;
                 fullscreenCallback = callback;
+                previousRequestedOrientation = getRequestedOrientation();
+                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
                 WebView currentWebView = bridge.getWebView();
                 currentWebView.setVisibility(View.GONE);
 
@@ -156,7 +160,13 @@ public class MainActivity extends BridgeActivity {
         ViewGroup decor = (ViewGroup) getWindow().getDecorView();
         decor.removeView(fullscreenView);
         fullscreenView = null;
-        bridge.getWebView().setVisibility(View.VISIBLE);
+        setRequestedOrientation(previousRequestedOrientation);
+        WebView webView = bridge.getWebView();
+        webView.setVisibility(View.VISIBLE);
+        webView.evaluateJavascript(
+            "document.querySelectorAll('.player-frame.player-fullscreen').forEach(player => player.classList.remove('player-fullscreen'))",
+            null
+        );
         decor.setSystemUiVisibility(previousSystemUiVisibility);
         if (fullscreenCallback != null) {
             fullscreenCallback.onCustomViewHidden();

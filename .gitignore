@@ -1,5 +1,6 @@
 # Android / Gradle
 *.apk
+!web/descargas/cinenova-android.apk
 *.aab
 *.ap_
 *.dex

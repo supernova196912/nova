@@ -40,6 +40,69 @@ nav a.active { border-color: var(--accent); }
 .chip { border-color: rgba(162, 185, 220, .15); }
 .empty { padding: 28px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg2); color: var(--muted); }
 
+/* Portada: indicadores compactos en lugar de una fila de miniaturas. */
+.hero {
+  height: min(76svh, 760px);
+  min-height: 500px;
+  background: #0a1220;
+}
+.hero::after {
+  background:
+    linear-gradient(90deg, rgba(8, 13, 24, .96) 0%, rgba(8, 13, 24, .72) 44%, rgba(8, 13, 24, .08) 100%),
+    linear-gradient(0deg, var(--bg) 0%, rgba(8, 13, 24, .06) 46%);
+}
+.hero .hcontent { bottom: 42px; max-width: 650px; }
+.hero .hcontent h1 { max-width: 620px; }
+.hero-carousel-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: 100%;
+  margin-top: 20px;
+  padding: 6px 8px;
+  border: 1px solid rgba(220, 232, 255, .14);
+  border-radius: 999px;
+  background: rgba(8, 13, 24, .56);
+  backdrop-filter: blur(12px);
+}
+.hero-arrow {
+  display: grid;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid rgba(210, 226, 255, .2);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .07);
+  color: #fff;
+  font-size: 25px;
+  line-height: 1;
+  transition: background .16s, border-color .16s, transform .16s;
+}
+.hero-arrow:hover { transform: scale(1.06); background: rgba(76, 130, 255, .28); border-color: #74a0ff; }
+.hero-indicators { display: flex; align-items: center; gap: 7px; padding: 0 3px; }
+.hero-dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border-radius: 99px;
+  background: rgba(235, 241, 251, .44);
+  transition: width .2s ease, background .2s ease;
+}
+.hero-dot:hover { background: rgba(255, 255, 255, .85); }
+.hero-dot.active { width: 24px; background: #fff; }
+.hero-count { display: flex; align-items: center; gap: 5px; margin-left: 2px; color: #aebbd0; font-size: 11px; font-variant-numeric: tabular-nums; }
+.hero-count strong { color: #fff; font-size: 13px; }
+.hero-count span { opacity: .5; }
+body.tv-mode .hero-arrow { flex-basis: 48px; width: 48px; height: 48px; font-size: 32px; }
+body.tv-mode .hero-dot { width: 11px; height: 11px; }
+body.tv-mode .hero-dot.active { width: 32px; }
+body.tv-mode .hero-count { font-size: 15px; }
+
+.hero [data-hero-step]:focus-visible,
+.hero [data-slide]:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+
 .download-app-btn {
   min-height: 42px;
   display: inline-flex;
@@ -236,6 +299,20 @@ body.tv-mode .episode-card strong { font-size: 17px; }
   .dinfo .actions { grid-column: 1 / -1; gap: 8px; }
   .dinfo .actions .btn { min-height: 44px; justify-content: center; padding: 10px 12px; font-size: 13px; }
   .dinfo .crew { display: none; }
+  .hero { height: min(70svh, 650px); min-height: 470px; max-height: 650px; }
+  .hero::after {
+    background: linear-gradient(0deg, rgba(8,13,24,.98) 0%, rgba(8,13,24,.68) 45%, rgba(8,13,24,.12) 100%);
+  }
+  .hero .slide { background-position: 58% center; }
+  .hero .hcontent { left: 16px; right: 16px; bottom: 22px; max-width: none; }
+  .hero .hcontent h1 { margin: 9px 0 7px; font-size: clamp(27px, 8vw, 38px); }
+  .hero .hcontent p { margin-bottom: 12px; font-size: 13px; }
+  .hero .thumbs { display: none; }
+  .hero-carousel-controls { gap: 8px; margin-top: 14px; padding: 5px 7px; }
+  .hero-arrow { flex-basis: 34px; width: 34px; height: 34px; font-size: 23px; }
+  .hero-indicators { gap: 6px; }
+  .hero-dot { width: 7px; height: 7px; }
+  .hero-dot.active { width: 20px; }
   .detail-panel { min-height: 0; padding: 18px 14px 26px; }
   .card { flex-basis: 142px; width: 142px; }
   .player-title { margin-bottom: 14px; }

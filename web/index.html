@@ -105,10 +105,7 @@ nav a:hover{color:#fff}nav a.active{color:#fff;border-color:var(--accent)}
 .hgen{color:var(--muted);font-size:14px;margin-bottom:10px}
 .hcontent p{color:#dcdcee;font-size:15px;line-height:1.55;margin-bottom:20px;max-width:560px}
 .actions{display:flex;gap:10px;flex-wrap:wrap}
-.thumbs{display:flex;gap:10px;margin-top:24px;flex-wrap:wrap}
-.thumbs button{width:112px;height:63px;border-radius:6px;background-size:cover;background-position:center;opacity:.5;border:2px solid transparent;transition:.2s}
-.thumbs button.on,.thumbs button:hover{opacity:1;border-color:#fff}
-@media(max-width:700px){.thumbs button{width:76px;height:43px}.hcontent p{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}}
+@media(max-width:700px){.hcontent p{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}}
 
 /* ROWS */
 section.row{padding:24px 4% 4px}
@@ -502,14 +499,26 @@ async function home(){
 function renderHero(items){
   const hero = $("#hero"); if (!hero || !items.length) return;
   items.forEach(it => remember(it));
-  hero.innerHTML = items.map((it, i) => `<div class="slide ${i ? "" : "on"}" style="background-image:url('${img(it.backdrop_path, "original")}')"></div>`).join("") + `<div id="hc"></div>`;
+  hero.setAttribute("role", "region");
+  hero.setAttribute("aria-roledescription", "carrusel");
+  hero.setAttribute("aria-label", "Películas y series destacadas");
+  hero.innerHTML = items.map((it, i) => `<div class="slide ${i ? "" : "on"}" role="img" aria-label="${esc(titleOf(it))}" style="background-image:url('${img(it.backdrop_path, "original")}')"></div>`).join("") + `<div id="hc"></div>`;
   let cur = 0;
+  let timer;
+  const stopTimer = () => clearInterval(timer);
+  const startTimer = () => {
+    stopTimer();
+    if (items.length > 1) timer = setInterval(() => show((cur + 1) % items.length), 8000);
+  };
   const show = i => {
-    cur = i;
-    $$(".slide", hero).forEach((s, k) => s.classList.toggle("on", k === i));
-    const it = items[i], type = it.media_type, fav = isFav(type, it.id);
+    cur = (i + items.length) % items.length;
+    $$(".slide", hero).forEach((s, k) => {
+      s.classList.toggle("on", k === cur);
+      s.setAttribute("aria-hidden", String(k !== cur));
+    });
+    const it = items[cur], type = it.media_type, fav = isFav(type, it.id);
     const ov = (it.overview || "").length > 230 ? it.overview.slice(0, 230).trim() + "…" : (it.overview || "");
-    $("#hc").innerHTML = `<div class="hcontent" key="${i}">
+    $("#hc").innerHTML = `<div class="hcontent" key="${cur}">
       <span class="tag">${typeName(type)} ${year(it)}</span><span class="rating">★ ${score(it.vote_average)}</span>
       <h1>${esc(titleOf(it))}</h1>
       <div class="hgen">${esc(genreNames(it))}</div>
@@ -519,17 +528,41 @@ function renderHero(items){
         <button class="btn ghost" data-act="trailer" data-type="${type}" data-id="${it.id}">🎬 Tráiler</button>
         <button class="btn ghost ${fav ? "fav-on" : ""}" data-act="fav" data-type="${type}" data-id="${it.id}">${fav ? "✓ En Mi lista" : "+ Mi lista"}</button>
       </div>
-      <div class="thumbs">${items.map((x, k) => `<button class="${k === i ? "on" : ""}" data-slide="${k}" style="background-image:url('${img(x.backdrop_path, "w300")}')" title="${esc(titleOf(x))}"></button>`).join("")}</div>
+      <div class="hero-carousel-controls" aria-label="Controles del carrusel">
+        <button class="hero-arrow" type="button" data-hero-step="-1" aria-label="Destacado anterior">‹</button>
+        <div class="hero-indicators" role="group" aria-label="Elegir destacado">
+          ${items.map((x, k) => `<button class="hero-dot ${k === cur ? "active" : ""}" type="button" data-slide="${k}" aria-label="Mostrar ${esc(titleOf(x))}" aria-pressed="${k === cur}"></button>`).join("")}
+        </div>
+        <button class="hero-arrow" type="button" data-hero-step="1" aria-label="Siguiente destacado">›</button>
+        <span class="hero-count"><strong>${String(cur + 1).padStart(2, "0")}</strong><span>/</span>${String(items.length).padStart(2, "0")}</span>
+      </div>
     </div>`;
   };
   show(0);
-  let timer = setInterval(() => show((cur + 1) % items.length), 8000);
+  startTimer();
   hero.addEventListener("click", e => {
-    const b = e.target.closest("[data-slide]"); if (!b) return;
-    clearInterval(timer); show(+b.dataset.slide);
-    timer = setInterval(() => show((cur + 1) % items.length), 8000);
+    const dot = e.target.closest("[data-slide]"), step = e.target.closest("[data-hero-step]");
+    if (!dot && !step) return;
+    const stepDirection = step ? Number(step.dataset.heroStep) : null;
+    const dotIndex = dot ? Number(dot.dataset.slide) : null;
+    show(step ? cur + stepDirection : dotIndex);
+    startTimer();
+    const selector = step ? `[data-hero-step="${stepDirection}"]` : `[data-slide="${dotIndex}"]`;
+    $(selector, hero)?.focus({ preventScroll: true });
   });
-  cleanup.push(() => clearInterval(timer));
+  hero.addEventListener("mouseenter", stopTimer);
+  hero.addEventListener("mouseleave", () => { if (!hero.matches(":focus-within")) startTimer(); });
+  hero.addEventListener("focusin", stopTimer);
+  hero.addEventListener("focusout", e => { if (!hero.contains(e.relatedTarget) && !hero.matches(":hover")) startTimer(); });
+  let touchStartX = 0;
+  hero.addEventListener("touchstart", e => { touchStartX = e.changedTouches[0]?.clientX || 0; }, {passive:true});
+  hero.addEventListener("touchend", e => {
+    const delta = (e.changedTouches[0]?.clientX || touchStartX) - touchStartX;
+    if (Math.abs(delta) < 48) return;
+    show(cur + (delta < 0 ? 1 : -1));
+    startTimer();
+  }, {passive:true});
+  cleanup.push(stopTimer);
 }
 
 function explore(type, q){

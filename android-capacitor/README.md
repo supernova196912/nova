@@ -11,7 +11,8 @@ La aplicación Android empaqueta la interfaz que vive en `web/`. El código nati
 ## Funciones
 
 - Interfaz adaptable a celular táctil y Android TV.
-- En TV, navegación con cruceta y foco visible; el botón Atrás/Escape sale de pantalla completa o vuelve desde la ficha.
+- En TV, navegación con cruceta y foco visible; durante la reproducción, las flechas mueven un cursor remoto y OK selecciona dentro del reproductor integrado.
+- Al reproducir en celular o TV, el video ocupa la pantalla en horizontal e inmersivo; Atrás sale del reproductor y restaura la orientación.
 - Reproducción integrada de UnLimPlay.
 - La app intercepta solicitudes a una lista de dominios publicitarios conocidos dentro de su WebView. El filtrado puede requerir mantenimiento si el reproductor cambia los dominios usados.
 - La APK incluye los archivos web sincronizados al momento de compilar.

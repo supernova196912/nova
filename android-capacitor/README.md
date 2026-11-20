@@ -11,7 +11,8 @@ La aplicación Android empaqueta la interfaz que vive en `web/`. El código nati
 ## Funciones
 
 - Interfaz adaptable a celular táctil y Android TV.
-- En TV, navegación con cruceta y foco visible; durante la reproducción, las flechas mueven un cursor remoto y OK selecciona dentro del reproductor integrado.
+- En TV, menú lateral completo y navegación con cruceta; al reproducir, el foco pasa al iframe y las flechas/OK quedan disponibles para los controles del reproductor.
+- La sección Infantil combina películas familiares, series infantiles, animación familiar y dibujos animados, con contenido adulto excluido en las consultas.
 - Al reproducir en celular o TV, el video ocupa la pantalla en horizontal e inmersivo; Atrás sale del reproductor y restaura la orientación.
 - Reproducción integrada de UnLimPlay.
 - La app intercepta solicitudes a una lista de dominios publicitarios conocidos dentro de su WebView. El filtrado puede requerir mantenimiento si el reproductor cambia los dominios usados.
@@ -45,9 +46,13 @@ Usa la URL real que Cloudflare Pages asigne a tu sitio (o tu dominio personaliza
 
 Si todavía no publicaste Pages, puedes compilar la interfaz, pero el catálogo de la APK no funcionará hasta definir la URL del backend y volver a sincronizar/compilar.
 
-## Sincronizar la web a Android
+## Actualizaciones remotas de la interfaz
 
-Cada vez que cambies `web/` o la clave TMDB, vuelve a generar la configuración y sincroniza los assets:
+La APK carga la interfaz desde `https://nova-2yi.pages.dev` (configurada en `capacitor.config.json`). Al publicar cambios de HTML, CSS o JavaScript en la rama de producción de Cloudflare Pages, la app los recibirá al volver a abrirse o recargar la vista; para esos cambios no hace falta compilar ni reinstalar otra APK. El dispositivo necesita conexión a Internet para iniciar y actualizar la interfaz.
+
+Esto actualiza la parte web de la app. Cambios en código Android/Java, permisos, plugins, orientación o comportamiento nativo todavía requieren compilar y distribuir una APK nueva. La app no instala APKs ni actualiza código nativo en silencio.
+
+Para sincronizar los assets empaquetados y la configuración de Android para la próxima compilación, ejecuta:
 
 ```powershell
 npm run sync:android
@@ -101,7 +106,7 @@ Cuando el asistente termine, copia la APK firmada resultante a:
 C:\proyectos\nova\web\descargas\cinenova-android.apk
 ```
 
-Después de copiarla, sube el cambio de la página junto con la APK a GitHub para que Cloudflare Pages publique el botón y el archivo. Para actualizar una instalación ya distribuida, incrementa `versionCode` en `app/build.gradle` y firma con la misma clave. La APK `release` firmada reemplaza la `debug`; si el dispositivo ya tiene instalada una `debug`, Android puede exigir desinstalarla primero.
+Después de copiarla, sube el cambio de la página junto con la APK a GitHub para que Cloudflare Pages publique el botón y el archivo. Una vez instalada la APK configurada para Pages, los cambios de la interfaz se publican en el sitio y llegan al volver a abrir la app; esos cambios web no requieren una APK nueva. Para cambiar el código nativo de Android sí hay que incrementar `versionCode`, firmar con la misma clave e instalar la nueva APK. La APK `release` firmada reemplaza la `debug`; si el dispositivo ya tiene instalada una `debug`, Android puede exigir desinstalarla primero.
 
 ## Comandos frecuentes
 

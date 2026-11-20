@@ -7,7 +7,9 @@
     "allowMixedContent": true
   },
   "server": {
+    "url": "https://nova-2yi.pages.dev",
     "allowNavigation": [
+      "nova-2yi.pages.dev",
       "unlimplay.com",
       "*.unlimplay.com"
     ]

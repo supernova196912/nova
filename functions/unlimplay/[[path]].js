@@ -57,6 +57,29 @@ const AD_FILTER_SCRIPT = `<script data-cinenova-ad-filter>
 })();
 </script>`;
 
+const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-remote-keys>
+(() => {
+  window.addEventListener('message', event => {
+    if (event.source !== window.parent) return;
+    if (event.data?.type === 'cinenova-player-focus') {
+      const play = document.querySelector('#pbtn, .pbtn, .frm-video, video, button, [tabindex="0"]');
+      if (play && play !== document.querySelector('video')) play.focus?.();
+      else { document.body.tabIndex = -1; document.body.focus(); }
+      return;
+    }
+    if (event.data?.type !== 'cinenova-player-key') return;
+    const key = event.data.key;
+    if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter',' '].includes(key)) return;
+    const target = document.activeElement || document.body;
+    const legacyCode = ({ArrowLeft:37,ArrowUp:38,ArrowRight:39,ArrowDown:40,Enter:13,' ':32})[key];
+    const keyEvent = new KeyboardEvent('keydown', {key, code:key === ' ' ? 'Space' : key, bubbles:true, cancelable:true});
+    try { Object.defineProperty(keyEvent, 'keyCode', {get:() => legacyCode}); Object.defineProperty(keyEvent, 'which', {get:() => legacyCode}); } catch (_) {}
+    target.dispatchEvent(keyEvent);
+    if (key === 'Enter' && target !== document.body && target.matches?.('button,a,select,input,[role="button"],[tabindex="0"]')) target.click();
+  });
+})();
+</script>`;
+
 function rewriteText(text, contentType, requestUrl) {
   const proxyOrigin = new URL(requestUrl).origin + "/unlimplay";
   let rewritten = text
@@ -67,7 +90,7 @@ function rewriteText(text, contentType, requestUrl) {
   rewritten = rewritten.replace(/(["'`])\/(?=(?:f\.php|sw-adblock\.js|img\/|cdn-cgi\/))/g, "$1/unlimplay/");
   rewritten = rewritten.replace(/scope\s*:\s*(["'])\/(["'])/g, "scope: $1/unlimplay/$2");
   if (/text\/html/i.test(contentType) && new URL(requestUrl).pathname.startsWith("/unlimplay/f/embed/")) {
-    rewritten = rewritten.replace(/<head([^>]*)>/i, (head) => head + AD_FILTER_SCRIPT);
+    rewritten = rewritten.replace(/<head([^>]*)>/i, (head) => head + AD_FILTER_SCRIPT + PLAYER_REMOTE_SCRIPT);
   }
   return rewritten;
 }

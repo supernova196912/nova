@@ -3,17 +3,9 @@ package com.nova.cinenova;
 import android.net.Uri;
 import android.os.Bundle;
 import android.content.pm.ActivityInfo;
-import android.content.pm.PackageManager;
-import android.graphics.Canvas;
-import android.graphics.Paint;
-import android.graphics.Color;
-import android.os.Handler;
-import android.os.Looper;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.MotionEvent;
 import android.view.KeyEvent;
-import android.os.SystemClock;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -50,16 +42,6 @@ public class MainActivity extends BridgeActivity {
     private int playerPreviousRequestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
     private boolean playerFullscreenActive;
     private String configuredApiHost = "";
-    private WebView appWebView;
-    private View nativeRemoteCursor;
-    private float nativeRemoteCursorX;
-    private float nativeRemoteCursorY;
-    private boolean nativeRemoteCursorVisible;
-    private final Handler uiHandler = new Handler(Looper.getMainLooper());
-    private final Runnable hideNativeRemoteCursor = () -> {
-        nativeRemoteCursorVisible = false;
-        if (nativeRemoteCursor != null) nativeRemoteCursor.invalidate();
-    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -69,7 +51,6 @@ public class MainActivity extends BridgeActivity {
         loadConfiguredApiHost();
 
         WebView webView = bridge.getWebView();
-        appWebView = webView;
         WebSettings settings = webView.getSettings();
         settings.setSupportMultipleWindows(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
@@ -120,7 +101,6 @@ public class MainActivity extends BridgeActivity {
                 decor.addView(view, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
                 ));
-                if (isTelevisionDevice()) showNativeRemoteCursor(decor);
                 previousSystemUiVisibility = decor.getSystemUiVisibility();
                 decor.setSystemUiVisibility(
                     View.SYSTEM_UI_FLAG_FULLSCREEN
@@ -187,11 +167,6 @@ public class MainActivity extends BridgeActivity {
         if (fullscreenView == null) return;
         ViewGroup decor = (ViewGroup) getWindow().getDecorView();
         decor.removeView(fullscreenView);
-        if (nativeRemoteCursor != null) {
-            decor.removeView(nativeRemoteCursor);
-            nativeRemoteCursor = null;
-        }
-        uiHandler.removeCallbacks(hideNativeRemoteCursor);
         fullscreenView = null;
         setRequestedOrientation(previousRequestedOrientation);
         WebView webView = bridge.getWebView();
@@ -229,109 +204,19 @@ public class MainActivity extends BridgeActivity {
 
     private final class TvRemoteBridge {
         @JavascriptInterface
-        public void setPlayerFullscreen(boolean active) {
-            runOnUiThread(() -> MainActivity.this.setPlayerFullscreen(active));
+        public boolean isTelevisionDevice() {
+            return detectTelevisionDevice();
         }
 
         @JavascriptInterface
-        public void tap(float xCss, float yCss) {
-            runOnUiThread(() -> {
-                WebView target = appWebView;
-                if (target == null || target.getVisibility() != View.VISIBLE) return;
-                float density = getResources().getDisplayMetrics().density;
-                float x = Math.max(1, Math.min(target.getWidth() - 1, xCss * density));
-                float y = Math.max(1, Math.min(target.getHeight() - 1, yCss * density));
-                long downTime = SystemClock.uptimeMillis();
-                MotionEvent down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0);
-                target.dispatchTouchEvent(down);
-                down.recycle();
-                target.postDelayed(() -> {
-                    MotionEvent up = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, x, y, 0);
-                    target.dispatchTouchEvent(up);
-                    up.recycle();
-                }, 70);
-            });
+        public void setPlayerFullscreen(boolean active) {
+            runOnUiThread(() -> MainActivity.this.setPlayerFullscreen(active));
         }
     }
 
-    private boolean isTelevisionDevice() {
-        return getPackageManager().hasSystemFeature(PackageManager.FEATURE_LEANBACK)
-            || getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEVISION);
-    }
-
-    private void showNativeRemoteCursor(ViewGroup decor) {
-        nativeRemoteCursorX = decor.getWidth() / 2f;
-        nativeRemoteCursorY = decor.getHeight() / 2f;
-        nativeRemoteCursorVisible = true;
-        nativeRemoteCursor = new View(this) {
-            private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-
-            @Override
-            protected void onDraw(Canvas canvas) {
-                super.onDraw(canvas);
-                if (!nativeRemoteCursorVisible) return;
-                float radius = 19f * getResources().getDisplayMetrics().density;
-                paint.setStyle(Paint.Style.FILL);
-                paint.setColor(Color.argb(105, 76, 130, 255));
-                canvas.drawCircle(nativeRemoteCursorX, nativeRemoteCursorY, radius, paint);
-                paint.setStyle(Paint.Style.STROKE);
-                paint.setStrokeWidth(3f * getResources().getDisplayMetrics().density);
-                paint.setColor(Color.WHITE);
-                canvas.drawCircle(nativeRemoteCursorX, nativeRemoteCursorY, radius, paint);
-                paint.setStyle(Paint.Style.FILL);
-                canvas.drawCircle(nativeRemoteCursorX, nativeRemoteCursorY, 3f * getResources().getDisplayMetrics().density, paint);
-            }
-        };
-        nativeRemoteCursor.setFocusableInTouchMode(true);
-        nativeRemoteCursor.setClickable(false);
-        decor.addView(nativeRemoteCursor, new FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ));
-        nativeRemoteCursor.requestFocus();
-        revealNativeRemoteCursor();
-    }
-
-    private void revealNativeRemoteCursor() {
-        if (nativeRemoteCursor == null) return;
-        nativeRemoteCursorVisible = true;
-        nativeRemoteCursor.invalidate();
-        uiHandler.removeCallbacks(hideNativeRemoteCursor);
-        uiHandler.postDelayed(hideNativeRemoteCursor, 1800);
-    }
-
-    private void moveNativeRemoteCursor(int keyCode) {
-        if (nativeRemoteCursor == null || fullscreenView == null) return;
-        int step = Math.round(36 * getResources().getDisplayMetrics().density);
-        View decor = getWindow().getDecorView();
-        switch (keyCode) {
-            case KeyEvent.KEYCODE_DPAD_UP: nativeRemoteCursorY -= step; break;
-            case KeyEvent.KEYCODE_DPAD_DOWN: nativeRemoteCursorY += step; break;
-            case KeyEvent.KEYCODE_DPAD_LEFT: nativeRemoteCursorX -= step; break;
-            case KeyEvent.KEYCODE_DPAD_RIGHT: nativeRemoteCursorX += step; break;
-        }
-        nativeRemoteCursorX = Math.max(8, Math.min(decor.getWidth() - 8, nativeRemoteCursorX));
-        nativeRemoteCursorY = Math.max(8, Math.min(decor.getHeight() - 8, nativeRemoteCursorY));
-        nativeRemoteCursor.invalidate();
-        revealNativeRemoteCursor();
-    }
-
-    private void tapNativeRemoteCursor() {
-        View target = fullscreenView;
-        if (target == null) return;
-        int[] targetLocation = new int[2];
-        target.getLocationOnScreen(targetLocation);
-        float x = nativeRemoteCursorX - targetLocation[0];
-        float y = nativeRemoteCursorY - targetLocation[1];
-        long downTime = SystemClock.uptimeMillis();
-        MotionEvent down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0);
-        target.dispatchTouchEvent(down);
-        down.recycle();
-        target.postDelayed(() -> {
-            MotionEvent up = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, x, y, 0);
-            target.dispatchTouchEvent(up);
-            up.recycle();
-        }, 70);
-        revealNativeRemoteCursor();
+    private boolean detectTelevisionDevice() {
+        return getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
+            || getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_TELEVISION);
     }
 
     @Override
@@ -355,19 +240,29 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (fullscreenView != null && nativeRemoteCursor != null) {
-            int code = event.getKeyCode();
-            boolean direction = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN
-                || code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT;
-            boolean select = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER;
-            if (direction || select) {
-                if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                    if (direction) moveNativeRemoteCursor(code);
-                    else if (!event.isLongPress() && event.getRepeatCount() == 0) tapNativeRemoteCursor();
+        if (playerFullscreenActive || fullscreenView != null) {
+            String playerKey = null;
+            switch (event.getKeyCode()) {
+                case KeyEvent.KEYCODE_DPAD_LEFT: playerKey = "ArrowLeft"; break;
+                case KeyEvent.KEYCODE_DPAD_UP: playerKey = "ArrowUp"; break;
+                case KeyEvent.KEYCODE_DPAD_RIGHT: playerKey = "ArrowRight"; break;
+                case KeyEvent.KEYCODE_DPAD_DOWN: playerKey = "ArrowDown"; break;
+                case KeyEvent.KEYCODE_DPAD_CENTER:
+                case KeyEvent.KEYCODE_ENTER: playerKey = "Enter"; break;
+                case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE: playerKey = " "; break;
+                default: break;
+            }
+            if (playerKey != null) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN && (event.getRepeatCount() == 0 || !"Enter".equals(playerKey))) {
+                    String jsKey = JSONObject.quote(playerKey);
+                    bridge.getWebView().evaluateJavascript(
+                        "window.cinenovaForwardPlayerKey && window.cinenovaForwardPlayerKey(" + jsKey + ")", null
+                    );
                 }
                 return true;
             }
         }
         return super.dispatchKeyEvent(event);
     }
+
 }

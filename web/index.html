@@ -13,7 +13,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 main{flex:1}
 a{color:inherit;text-decoration:none}
 button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
-button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:4px solid #75a7ff;outline-offset:3px;transform:scale(1.04);z-index:10;transition:transform .12s,outline-color .12s}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:2px solid rgba(116,160,255,.55);outline-offset:2px;z-index:10;transition:transform .12s,outline-color .12s}
 img{display:block}
 .muted{color:var(--muted)}
 
@@ -47,9 +47,6 @@ body.tv-mode .scroller>.card{scroll-snap-align:start}
   header{position:sticky;gap:10px;padding:10px 4%}
   header>.logo{font-size:19px}
   header>#nav{display:none}
-  .hright{gap:5px}
-  #q{width:min(52vw,230px);padding:9px 12px}
-  #sugg{width:min(88vw,340px)}
   .bottom-nav{position:fixed;inset:auto 0 0;z-index:90;display:flex;justify-content:space-around;gap:2px;padding:8px 4px max(8px,env(safe-area-inset-bottom));background:rgba(11,11,41,.97);border-top:1px solid var(--line);backdrop-filter:blur(12px)}
   .bottom-nav a,.bottom-nav button{display:flex;flex:1;min-width:0;flex-direction:column;align-items:center;gap:3px;padding:5px 2px;color:var(--muted);font-size:10px;font-weight:700;white-space:nowrap}
   .bottom-nav .mobile-icon{font-size:19px;line-height:1.1}
@@ -57,8 +54,8 @@ body.tv-mode .scroller>.card{scroll-snap-align:start}
   body{padding-bottom:76px}
   footer{margin-bottom:0}
 }
-@media(min-width:768px) and (max-width:1023px){#q{width:190px}}
-body.tv-mode :focus{outline:4px solid #75a7ff;outline-offset:3px;transform:scale(1.04);z-index:10}
+body.tv-mode :focus{outline:2px solid rgba(116,160,255,.35);outline-offset:2px;transform:none;z-index:10}
+body.tv-mode .card:focus-visible{outline:0;z-index:12;transform:scale(1.075);filter:brightness(1.12)}
 body.tv-mode button,body.tv-mode a,body.tv-mode select{transition:transform .12s,outline-color .12s}
 
 /* HEADER */
@@ -69,17 +66,8 @@ nav::-webkit-scrollbar{display:none}
 nav a{white-space:nowrap;padding:4px 0;border-bottom:2px solid transparent}
 nav a:hover{color:#fff}nav a.active{color:#fff;border-color:var(--accent)}
 .hright{margin-left:auto;display:flex;gap:10px;align-items:center}
-.sbox{position:relative}
-#q{background:var(--bg2);border:1px solid var(--line);border-radius:20px;padding:9px 16px;color:#fff;width:270px;font-size:14px;outline:none}
-#q:focus{border-color:#5a5aa8}
-#sugg{display:none;position:absolute;right:0;top:44px;width:340px;background:var(--card);border-radius:10px;overflow:hidden;box-shadow:0 14px 40px rgba(0,0,0,.6);z-index:60}
-#sugg.open{display:block}
-.sg{display:flex;gap:10px;padding:8px 12px;align-items:center;font-size:14px}.sg:hover{background:rgba(255,255,255,.07)}
-.sg img{width:36px;height:54px;object-fit:cover;border-radius:4px;background:#222;flex:none}
-.sg span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
-.sg.all{justify-content:center;color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding:11px}
 .icon{font-size:20px;color:var(--muted);padding:4px}.icon:hover{color:#fff}
-@media(max-width:900px){header{flex-wrap:wrap;gap:10px 16px}nav{order:3;width:100%}#q{width:170px}#sugg{width:290px}}
+@media(max-width:900px){header{flex-wrap:wrap;gap:10px 16px}nav{order:3;width:100%}}
 
 /* BUTTONS / CHIPS */
 .btn{display:inline-flex;align-items:center;gap:8px;background:var(--accent);padding:11px 22px;border-radius:6px;font-weight:700;font-size:14.5px;transition:filter .2s}
@@ -251,8 +239,10 @@ footer{margin-top:50px;padding:40px 4% 30px;background:#07071c;color:var(--muted
   <a href="#/" class="tv-logo">CINE<span>NOVA</span></a>
   <a href="#/buscar" class="tv-link" data-r="buscar"><span class="tv-icon">⌕</span>Buscar</a>
   <a href="#/" class="tv-link" data-r=""><span class="tv-icon">⌂</span>Inicio</a>
+  <a href="#/tendencias" class="tv-link" data-r="tendencias"><span class="tv-icon">✦</span>Tendencias</a>
   <a href="#/peliculas" class="tv-link" data-r="peliculas"><span class="tv-icon">▣</span>Películas</a>
   <a href="#/series" class="tv-link" data-r="series"><span class="tv-icon">▤</span>Series</a>
+  <a href="#/lista/infantiles" class="tv-link" data-r="infantiles"><span class="tv-icon">♧</span>Infantil</a>
   <a href="#/anime" class="tv-link" data-r="anime"><span class="tv-icon">✦</span>Anime</a>
   <a href="#/doramas" class="tv-link" data-r="doramas"><span class="tv-icon">▧</span>Doramas</a>
   <a href="#/mi-lista" class="tv-link" data-r="mi-lista"><span class="tv-icon">♡</span>Mi lista</a>
@@ -264,14 +254,15 @@ footer{margin-top:50px;padding:40px 4% 30px;background:#07071c;color:var(--muted
   <nav id="nav">
     <a href="#/" data-r="">Inicio</a>
     <a href="#/tendencias" data-r="tendencias">Tendencias</a>
+    <a href="#/buscar" data-r="buscar">Buscar</a>
     <a href="#/peliculas" data-r="peliculas">Películas</a>
     <a href="#/series" data-r="series">Series</a>
+    <a href="#/lista/infantiles" data-r="infantiles">Infantil</a>
     <a href="#/anime" data-r="anime">Anime</a>
     <a href="#/doramas" data-r="doramas">Doramas</a>
     <a href="#/mi-lista" data-r="mi-lista">Mi lista</a>
   </nav>
   <div class="hright">
-    <div class="sbox"><input id="q" type="search" placeholder="🔍 Buscar películas, series, actores…" autocomplete="off"><div id="sugg"></div></div>
     <a class="download-app-btn" href="./descargas/cinenova-android.apk" download aria-label="Descargar CINENOVA para Android">⬇ <span>Descargar app</span></a>
   </div>
 </header>
@@ -320,11 +311,6 @@ let routeToken = 0;
 let episodeRequestToken = 0;
 const app = $("#app");
 let isTvMode = false;
-let tvPlayerRemoteActive = false;
-let tvRemoteCursor = null;
-let tvRemoteCursorX = 0;
-let tvRemoteCursorY = 0;
-let tvRemoteCursorTimer = 0;
 function isNativeApp(){
   return Boolean((window.Capacitor && window.Capacitor.isNativePlatform?.())
     || (location.hostname === "localhost" && /Android/i.test(navigator.userAgent || "")));
@@ -333,23 +319,17 @@ function updateDeviceMode(){
   const ua = navigator.userAgent || "";
   const nativeApp = isNativeApp();
   const tvUa = /Android TV|SmartTV|BRAVIA|AFT|Chromecast|GoogleTV|HbbTV/i.test(ua);
+  let nativeTv = false;
+  try { nativeTv = window.CinenovaTvRemote?.isTelevisionDevice?.() === true; } catch(e) {}
   const forced = new URLSearchParams(location.search).get("tv") === "1";
   const coarseLarge = matchMedia("(min-width: 1024px) and (pointer: coarse)").matches;
-  isTvMode = forced || tvUa || coarseLarge;
+  isTvMode = forced || tvUa || coarseLarge || nativeTv;
   document.body.classList.toggle("native-app", nativeApp);
   document.body.classList.toggle("tv-mode", isTvMode);
 }
 updateDeviceMode();
 window.addEventListener("resize", updateDeviceMode, {passive:true});
-window.addEventListener("orientationchange", () => {
-  updateDeviceMode();
-  if (tvPlayerRemoteActive) setTimeout(() => {
-    tvRemoteCursorX = innerWidth / 2;
-    tvRemoteCursorY = innerHeight / 2;
-    positionTvRemoteCursor();
-    revealTvRemoteCursor();
-  }, 250);
-}, {passive:true});
+window.addEventListener("orientationchange", updateDeviceMode, {passive:true});
 $("#tvCollapse").onclick = () => {
   const collapsed = document.body.classList.toggle("tv-sidebar-collapsed");
   $("#tvCollapse").textContent = collapsed ? "›" : "‹";
@@ -430,7 +410,10 @@ const LISTS = {
   "doramas-japoneses": {t:"Doramas japoneses", type:"tv", path:"/discover/tv", p:() => ({with_original_language:"ja", without_genres:16, sort_by:"popularity.desc"}), tabs:["doramas","peliculas-coreanas","doramas-chinos","doramas-japoneses"]},
   "argentinas":        {t:"Cine argentino", type:"movie", path:"/discover/movie", p:() => ({with_origin_country:"AR", sort_by:"popularity.desc"})},
   "latinas":           {t:"Series latinoamericanas", type:"tv", path:"/discover/tv", p:() => ({with_origin_country:"AR|MX|CO|CL|BR", sort_by:"popularity.desc"})},
-  "infantiles":        {t:"Series infantiles", type:"tv", path:"/discover/tv", p:() => ({with_genres:10762, sort_by:"popularity.desc"})},
+  "infantiles":        {t:"Películas infantiles", type:"movie", path:"/discover/movie", p:() => ({with_genres:10751, include_adult:false, sort_by:"popularity.desc"}), tabs:["infantiles","infantiles-series","infantiles-animacion","infantiles-dibujos"]},
+  "infantiles-series": {t:"Series infantiles", type:"tv", path:"/discover/tv", p:() => ({with_genres:10762, include_adult:false, sort_by:"popularity.desc"}), tabs:["infantiles","infantiles-series","infantiles-animacion","infantiles-dibujos"]},
+  "infantiles-animacion":{t:"Animación familiar", type:"movie", path:"/discover/movie", p:() => ({with_genres:"16,10751", include_adult:false, sort_by:"popularity.desc"}), tabs:["infantiles","infantiles-series","infantiles-animacion","infantiles-dibujos"]},
+  "infantiles-dibujos":{t:"Dibujos animados", type:"tv", path:"/discover/tv", p:() => ({with_genres:"16,10762", include_adult:false, sort_by:"popularity.desc"}), tabs:["infantiles","infantiles-series","infantiles-animacion","infantiles-dibujos"]},
   "telenovelas":       {t:"Telenovelas", type:"tv", path:"/discover/tv", p:() => ({with_genres:10766, sort_by:"popularity.desc"})},
   "guerra-politica":   {t:"Guerra y política", type:"tv", path:"/discover/tv", p:() => ({with_genres:10768, sort_by:"popularity.desc"})},
   "documentales-series":{t:"Series documentales", type:"tv", path:"/discover/tv", p:() => ({with_genres:99, sort_by:"popularity.desc"})},
@@ -459,7 +442,7 @@ function observeRows(root){
 }
 
 /* ===== GRILLA CON SCROLL INFINITO ===== */
-function infiniteGrid(grid, path, params, type, filter){
+function infiniteGrid(grid, path, params, type, filter, onFirstPage){
   let page = 1, total = 1, loading = false;
   const t = routeToken;
   const sentinel = document.createElement("div");
@@ -477,6 +460,7 @@ function infiniteGrid(grid, path, params, type, filter){
       if (filter) items = items.filter(filter);
       if (page === 1 && !items.length) grid.innerHTML = '<div class="empty">No se encontraron resultados.</div>';
       grid.insertAdjacentHTML("beforeend", items.map(x => card(x, type)).join(""));
+      if (page === 1) onFirstPage?.(grid, items);
       page++;
       sentinel.innerHTML = "";
     }catch(e){
@@ -500,13 +484,16 @@ async function home(){
     "top-peliculas","top-series","estrenos","netflix","mejor-series","populares-peliculas","anime","doramas",
     "disney","hbo","prime","peliculas-coreanas","argentinas","latinas","proximamente",
     ...GENRE_ROWS.map(g => "genero-" + g[0]),
-    "infantiles","telenovelas","guerra-politica","documentales-series","mejor-peliculas","en-emision"]);
+    "infantiles","infantiles-series","telenovelas","guerra-politica","documentales-series","mejor-peliculas","en-emision"]);
   observeRows(app);
   try{
     const d = await api("/trending/all/day");
     if (t !== routeToken) return;
     renderHero(d.results.filter(x => x.backdrop_path && x.media_type !== "person").slice(0, 7));
-  }catch(e){ $("#hero").remove(); }
+  }catch(e){
+    $("#hero").remove();
+    if (isTvMode) requestAnimationFrame(() => $("#tvSidebar [data-r='']")?.focus());
+  }
 }
 
 function renderHero(items){
@@ -524,6 +511,8 @@ function renderHero(items){
     if (items.length > 1) timer = setInterval(() => show((cur + 1) % items.length), 8000);
   };
   const show = i => {
+    const oldFocus = document.activeElement?.closest("#hc [data-hero-action], #hc [data-slide]");
+    const oldAction = oldFocus?.dataset.heroAction, oldSlide = oldFocus?.dataset.slide;
     cur = (i + items.length) % items.length;
     $$(".slide", hero).forEach((s, k) => {
       s.classList.toggle("on", k === cur);
@@ -537,22 +526,25 @@ function renderHero(items){
       <div class="hgen">${esc(genreNames(it))}</div>
       <p>${esc(ov)}</p>
       <div class="actions">
-        <a class="btn" href="#/${type}/${it.id}">▶ Ver ahora</a>
-        <button class="btn ghost" data-act="trailer" data-type="${type}" data-id="${it.id}">🎬 Tráiler</button>
-        <button class="btn ghost ${fav ? "fav-on" : ""}" data-act="fav" data-type="${type}" data-id="${it.id}">${fav ? "✓ En Mi lista" : "+ Mi lista"}</button>
+        <a class="btn" data-hero-action="watch" href="#/${type}/${it.id}">▶ Ver ahora</a>
+        <button class="btn ghost" data-hero-action="trailer" data-act="trailer" data-type="${type}" data-id="${it.id}">🎬 Tráiler</button>
+        <button class="btn ghost ${fav ? "fav-on" : ""}" data-hero-action="favorite" data-act="fav" data-type="${type}" data-id="${it.id}">${fav ? "✓ En Mi lista" : "+ Mi lista"}</button>
       </div>
       <div class="hero-carousel-controls" aria-label="Controles del carrusel">
         <button class="hero-arrow" type="button" data-hero-step="-1" aria-label="Destacado anterior">‹</button>
-        <div class="hero-indicators" role="group" aria-label="Elegir destacado">
-          ${items.map((x, k) => `<button class="hero-dot ${k === cur ? "active" : ""}" type="button" data-slide="${k}" aria-label="Mostrar ${esc(titleOf(x))}" aria-pressed="${k === cur}"></button>`).join("")}
+        <div class="hero-indicators hero-thumbnails" role="group" aria-label="Elegir destacado">
+          ${items.map((x, k) => `<button class="hero-thumb ${k === cur ? "active" : ""}" type="button" data-slide="${k}" aria-label="Mostrar ${esc(titleOf(x))}" aria-pressed="${k === cur}"><img loading="lazy" src="${img(x.poster_path, "w185")}" alt=""><span>${esc(titleOf(x))}</span></button>`).join("")}
         </div>
         <button class="hero-arrow" type="button" data-hero-step="1" aria-label="Siguiente destacado">›</button>
-        <span class="hero-count"><strong>${String(cur + 1).padStart(2, "0")}</strong><span>/</span>${String(items.length).padStart(2, "0")}</span>
       </div>
     </div>`;
+    if (isTvMode && (oldAction || oldSlide !== undefined)) requestAnimationFrame(() =>
+      (oldAction ? $(`#hc [data-hero-action="${oldAction}"]`) : $(`#hc [data-slide="${oldSlide}"]`))?.focus({preventScroll:true})
+    );
   };
   show(0);
   startTimer();
+  if (isTvMode) requestAnimationFrame(() => $("#hc .actions a.btn")?.focus({preventScroll:true}));
   hero.addEventListener("click", e => {
     const dot = e.target.closest("[data-slide]"), step = e.target.closest("[data-hero-step]");
     if (!dot && !step) return;
@@ -565,8 +557,6 @@ function renderHero(items){
   });
   hero.addEventListener("mouseenter", stopTimer);
   hero.addEventListener("mouseleave", () => { if (!hero.matches(":focus-within")) startTimer(); });
-  hero.addEventListener("focusin", stopTimer);
-  hero.addEventListener("focusout", e => { if (!hero.contains(e.relatedTarget) && !hero.matches(":hover")) startTimer(); });
   let touchStartX = 0;
   hero.addEventListener("touchstart", e => { touchStartX = e.changedTouches[0]?.clientX || 0; }, {passive:true});
   hero.addEventListener("touchend", e => {
@@ -631,14 +621,37 @@ function listPage(k){
 
 function search(q){
   const query = (q.get("q") || "").trim(), tipo = q.get("tipo") || "multi";
-  $("#q").value = query;
   document.title = `Buscar: ${query} — CINENOVA`;
-  if (!query){ app.innerHTML = `<div class="page"><h1>Buscar</h1><p class="muted">Escribí algo en el buscador.</p></div>`; return; }
+  const form = `<form class="search-page-form" id="searchForm"><input id="searchQuery" type="search" value="${esc(query)}" ${isTvMode ? "readonly" : ""} placeholder="Buscar películas, series o actores" aria-label="Buscar películas, series o actores"><button class="btn primary" type="submit">Buscar</button></form>`;
+  if (!query){
+    app.innerHTML = `<div class="page search-page"><h1>Buscar</h1>${form}<p class="muted">Escribí un título, una serie o el nombre de un actor.</p></div>`;
+    bindSearchForm();
+    return;
+  }
   const l = t => `#/buscar?q=${encodeURIComponent(query)}&tipo=${t}`;
-  app.innerHTML = `<div class="page"><h1>Resultados para “${esc(query)}”</h1>
+  app.innerHTML = `<div class="page search-page"><h1>Resultados para “${esc(query)}”</h1>${form}
     <div class="tabs">${[["multi","Todo"],["movie","Películas"],["tv","Series"],["person","Personas"]].map(([v, n]) => `<a class="chip ${v === tipo ? "on" : ""}" href="${l(v)}">${n}</a>`).join("")}</div>
     <div class="grid" id="grid"></div></div>`;
-  infiniteGrid($("#grid"), "/search/" + tipo, {query, include_adult:false}, tipo === "multi" ? undefined : tipo, x => x.poster_path || x.profile_path);
+  bindSearchForm();
+  infiniteGrid($("#grid"), "/search/" + tipo, {query, include_adult:false}, tipo === "multi" ? undefined : tipo, x => x.poster_path || x.profile_path, (grid, items) => {
+    if (isTvMode && items.length) requestAnimationFrame(() => {
+      const first = $(".card", grid);
+      first?.focus({preventScroll:true});
+      first?.scrollIntoView({block:"center", inline:"nearest"});
+    });
+  });
+}
+function bindSearchForm(){
+  const input = $("#searchQuery");
+  if (input && isTvMode) input.addEventListener("click", () => {
+    if (!input.readOnly) return;
+    input.readOnly = false; input.blur(); input.focus();
+  });
+  $("#searchForm")?.addEventListener("submit", e => {
+    e.preventDefault();
+    const value = $("#searchQuery")?.value.trim();
+    if (value) location.hash = `#/buscar?q=${encodeURIComponent(value)}`;
+  });
 }
 
 function pickVideo(list = []){
@@ -685,6 +698,7 @@ async function detail(type, id){
   if (t !== routeToken) return;
   remember(d, type);
   const title = titleOf(d);
+  const appPlayback = isNativeApp();
   document.title = title + " — CINENOVA";
   const otitle = d.original_title || d.original_name;
   const cert = getCert(d, type);
@@ -727,6 +741,10 @@ async function detail(type, id){
   const initialSeason = seasonList.find(s => s.season_number === 1) || seasonList[0];
   const initialSeasonNumber = initialSeason?.season_number || 1;
   const initialEpisodeCount = initialSeason?.episode_count || 1;
+  const episodeBrowserHTML = type === "tv" ? `<section class="episode-browser ${appPlayback ? "episode-browser-app" : ""}" aria-label="Capítulos de la serie">
+      <div class="episode-browser-head"><div><h3>Episodios</h3><p id="episodeSeasonLabel">Temporada ${initialSeasonNumber} · Elegí un capítulo para reproducir.</p></div>
+        <label class="season-picker">Temporada<select id="playSeason">${seasonList.map(s => `<option value="${s.season_number}" data-episodes="${s.episode_count}" ${s.season_number === initialSeasonNumber ? "selected" : ""}>${esc(s.name)}</option>`).join("") || '<option value="1" data-episodes="1">Temporada 1</option>'}</select></label>
+      </div><div class="episode-list" id="episodeList" aria-live="polite"></div></section>` : "";
 
   app.innerHTML = `
   <section class="dhero" style="background-image:url('${img(d.backdrop_path, "original")}')">
@@ -749,41 +767,32 @@ async function detail(type, id){
       </div>
     </div>
   </section>
+  ${appPlayback && type === "tv" ? episodeBrowserHTML : ""}
   <nav class="detail-tabs" role="tablist" aria-label="Secciones del título">
-    ${[["ver","Ver"],["reparto","Reparto"],["detalles","Detalles"],["similares","Similares"],["trailer","Tráiler"]].map(([key,label], i) => `<button class="detail-tab ${i === 0 ? "active" : ""}" role="tab" aria-selected="${i === 0}" data-detail-tab="${key}">${label}</button>`).join("")}
+    ${(appPlayback ? [["reparto","Reparto"],["similares","Similares"],["trailer","Tráiler"]] : [["ver","Ver"],["reparto","Reparto"],["detalles","Detalles"],["similares","Similares"],["trailer","Tráiler"]]).map(([key,label], i) => `<button class="detail-tab ${i === 0 && !appPlayback ? "active" : ""}" role="tab" aria-selected="${i === 0 && !appPlayback}" data-detail-tab="${key}">${label}</button>`).join("")}
   </nav>
-  <section class="detail-panel" id="panel-ver" role="tabpanel">
+  ${appPlayback ? "" : `<section class="detail-panel" id="panel-ver" role="tabpanel">
     <h2 class="player-title">Ver ahora: ${esc(title)}</h2>
-    ${type === "tv" ? `<div class="player-controls">
-      <label>Temporada <select id="playSeason">${seasonList.map(s => `<option value="${s.season_number}" data-episodes="${s.episode_count}" ${s.season_number === initialSeasonNumber ? "selected" : ""}>${esc(s.name)}</option>`).join("") || '<option value="1" data-episodes="1">Temporada 1</option>'}</select></label>
-      <label>Episodio <select id="playEpisode">${Array.from({length:initialEpisodeCount}, (_,i) => `<option value="${i+1}">Episodio ${i+1}</option>`).join("")}</select></label>
-      <button class="btn primary play-current-episode" data-act="play-current-episode" data-id="${d.id}" data-type="tv">▶ Reproducir capítulo</button>
-    </div>` : ""}
     <div class="player-frame" id="player-${d.id}"><iframe src="about:blank" title="Reproductor de video" tabindex="0" width="100%" height="100%" frameBorder="0" allowFullScreen allow="autoplay; fullscreen; picture-in-picture; encrypted-media; remote-playback" referrerPolicy="origin"></iframe></div>
-    ${type === "tv" ? `<section class="episode-browser" aria-label="Capítulos de la serie">
-      <div class="episode-browser-head"><div><h3>Capítulos</h3><p>Elige un episodio para reproducirlo.</p></div>
-        <input id="episodeSearch" class="episode-search" type="search" placeholder="Buscar capítulo por nombre" aria-label="Buscar capítulo por nombre">
-      </div>
-      <div class="episode-list" id="episodeList" aria-live="polite"></div>
-    </section>` : ""}
-  </section>
+    ${type === "tv" ? episodeBrowserHTML : ""}
+  </section>`}
   <section class="detail-panel" id="panel-reparto" role="tabpanel" hidden>${staticRow("Reparto", cast)}</section>
-  <section class="detail-panel" id="panel-detalles" role="tabpanel" hidden>
+  ${appPlayback ? "" : `<section class="detail-panel" id="panel-detalles" role="tabpanel" hidden>
     <section class="block"><h2>Información</h2><div class="info">${info}</div>${kws.length ? `<div style="margin-top:18px"><b class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:1px">Palabras clave</b><div class="kw">${kws.map(k => `<span>${esc(k.name)}</span>`).join("")}</div></div>` : ""}</section>
-  </section>
+  </section>`}
   <section class="detail-panel" id="panel-similares" role="tabpanel" hidden>${staticRow("Recomendadas", recs)}${staticRow("Títulos similares", sim)}</section>
   <section class="detail-panel" id="panel-trailer" role="tabpanel" hidden>${staticRow("Tráileres y videos", vids)}</section>`;
   $$("[data-detail-tab]").forEach(tab => tab.onclick = () => activateDetailTab(tab.dataset.detailTab));
+  const playerFrame = $(`#player-${d.id} iframe`);
+  playerFrame?.addEventListener("load", () => { if (isTvMode) focusPlayerFrame(playerFrame); });
   requestAnimationFrame(() => { if (isTvMode) $("[data-act='play-detail']")?.focus(); });
   if (type === "tv"){
-    const seasonSel = $("#playSeason"), episodeSel = $("#playEpisode"), frame = $(`#player-${d.id} iframe`);
+    const seasonSel = $("#playSeason");
     const updateEpisodes = () => {
-      const count = Number(seasonSel.selectedOptions[0]?.dataset.episodes || 1);
-      episodeSel.innerHTML = Array.from({length:count}, (_,i) => `<option value="${i+1}">Episodio ${i+1}</option>`).join("");
+      const label = $("#episodeSeasonLabel"); if (label) label.textContent = `Temporada ${seasonSel.value} · Elegí un capítulo para reproducir.`;
       loadSeason(d.id, seasonSel.value);
     };
     seasonSel.onchange = updateEpisodes;
-    $("#episodeSearch").oninput = e => filterEpisodeCards(e.target.value);
     loadSeason(d.id, initialSeasonNumber);
   }
 }
@@ -798,12 +807,11 @@ async function loadSeason(id, n){
   try{
     const s = await api(`/tv/${id}/season/${n}`);
     if (t !== routeToken || request !== episodeRequestToken) return;
-    box.innerHTML = (s.episodes || []).map(e => `<button class="episode-card" data-act="play-episode" data-type="tv" data-id="${id}" data-season="${n}" data-episode="${e.episode_number}" data-search="${esc(e.name || "").toLowerCase()}">
+    box.innerHTML = (s.episodes || []).map(e => `<button class="episode-card" data-act="play-episode" data-type="tv" data-id="${id}" data-season="${n}" data-episode="${e.episode_number}" data-search="${esc(e.name || "").toLowerCase()}" aria-label="Reproducir temporada ${n}, episodio ${e.episode_number}: ${esc(e.name || "")}">
       ${e.still_path ? `<img loading="lazy" src="${img(e.still_path, "w300")}" alt="">` : '<span class="episode-thumb-fallback"></span>'}
       <span><strong>E${e.episode_number}. ${esc(e.name || "Episodio " + e.episode_number)}</strong><small>${fmtDate(e.air_date)}${e.runtime ? " · " + e.runtime + " min" : ""}</small></span>
       <span class="episode-play-icon" aria-hidden="true">▶</span>
     </button>`).join("") || '<p class="episode-empty">No hay capítulos disponibles para esta temporada.</p>';
-    filterEpisodeCards($("#episodeSearch")?.value || "");
   }catch(e){ if (t === routeToken && request === episodeRequestToken) box.innerHTML = '<p class="episode-empty">No se pudieron cargar los capítulos. Vuelve a elegir la temporada para reintentar.</p>'; }
 }
 function filterEpisodeCards(query){
@@ -819,57 +827,68 @@ function filterEpisodeCards(query){
   } else if (empty && cards.length) empty.hidden = true;
 }
 function startDetailPlayback(id, type, season = 1, episode = 1){
-  const player = document.getElementById(`player-${id}`), frame = player?.querySelector("iframe");
-  if (!player || !frame) return;
   const path = type === "tv" ? `f/embed/tv/${id}/${season}/${episode}` : `f/embed/movie/${id}`;
   const src = unlimplayUrl(path);
-  if (frame.dataset.loadedSrc !== src){ frame.dataset.loadedSrc = src; frame.src = src; }
+  if (isNativeApp()){
+    $(".app-player-overlay")?.remove();
+    const player = document.createElement("div"); player.className = "player-frame player-fullscreen app-player-overlay"; player.id = `player-${id}`;
+    const frame = document.createElement("iframe");
+    frame.title = "Reproductor de video"; frame.tabIndex = 0; frame.width = "100%"; frame.height = "100%"; frame.setAttribute("frameborder", "0"); frame.allowFullscreen = true;
+    frame.allow = "autoplay; fullscreen; picture-in-picture; encrypted-media; remote-playback"; frame.referrerPolicy = "origin";
+    frame.addEventListener("load", () => focusPlayerFrame(frame), {once:true}); player.append(frame); document.body.append(player);
+    window.CinenovaTvRemote?.setPlayerFullscreen(true); frame.src = src; requestAnimationFrame(() => focusPlayerFrame(frame)); return;
+  }
+  const player = document.getElementById(`player-${id}`), frame = player?.querySelector("iframe");
+  if (!player || !frame) return;
+  if (frame.dataset.loadedSrc !== src){
+    frame.dataset.loadedSrc = src;
+    if (isTvMode) frame.addEventListener("load", () => focusPlayerFrame(frame), {once:true});
+    frame.src = src;
+  }
   player.scrollIntoView({behavior:"smooth", block:"start"});
-  if (isTvMode || isNativeApp()){
+  if (isTvMode){
     player.classList.add("player-fullscreen");
     window.CinenovaTvRemote?.setPlayerFullscreen(true);
-    activateTvPlayerRemote(player);
+    if (isTvMode) requestAnimationFrame(() => frame.focus({preventScroll:true}));
   }
 }
-
-function activateTvPlayerRemote(player){
-  tvPlayerRemoteActive = Boolean(isTvMode && isNativeApp() && window.CinenovaTvRemote);
-  if (!tvPlayerRemoteActive) return;
-  tvRemoteCursor?.remove();
-  const rect = player.getBoundingClientRect();
-  tvRemoteCursorX = Math.max(24, Math.min(innerWidth - 24, rect.left + rect.width / 2));
-  tvRemoteCursorY = Math.max(24, Math.min(innerHeight - 24, rect.top + rect.height / 2));
-  tvRemoteCursor = document.createElement("div");
-  tvRemoteCursor.className = "tv-remote-cursor";
-  tvRemoteCursor.setAttribute("role", "application");
-  tvRemoteCursor.setAttribute("aria-label", "Control remoto del reproductor. Flechas para mover, OK para seleccionar");
-  tvRemoteCursor.tabIndex = 0;
-  document.body.append(tvRemoteCursor);
-  positionTvRemoteCursor();
-  tvRemoteCursor.focus({preventScroll:true});
-  revealTvRemoteCursor();
-}
-function positionTvRemoteCursor(){
-  if (!tvRemoteCursor) return;
-  tvRemoteCursor.style.left = `${tvRemoteCursorX}px`;
-  tvRemoteCursor.style.top = `${tvRemoteCursorY}px`;
-}
-function revealTvRemoteCursor(){
-  if (!tvRemoteCursor) return;
-  tvRemoteCursor.classList.remove("sleep");
-  clearTimeout(tvRemoteCursorTimer);
-  tvRemoteCursorTimer = setTimeout(() => tvRemoteCursor?.classList.add("sleep"), 1800);
-}
-function stopTvPlayerRemote(){
-  tvPlayerRemoteActive = false;
-  clearTimeout(tvRemoteCursorTimer);
-  tvRemoteCursor?.remove();
-  tvRemoteCursor = null;
-  window.CinenovaTvRemote?.setPlayerFullscreen(false);
-}
 window.cinenovaExitPlayerFullscreen = () => {
+  const frame = $(".player-frame.player-fullscreen iframe");
   $$(".player-frame.player-fullscreen").forEach(player => player.classList.remove("player-fullscreen"));
-  stopTvPlayerRemote();
+  $$(".app-player-overlay").forEach(player => player.remove());
+  frame?.blur();
+  window.CinenovaTvRemote?.setPlayerFullscreen(false);
+  if (isTvMode) requestAnimationFrame(() => $("[data-act='play-detail']")?.focus({preventScroll:true}) || $(".episode-card")?.focus({preventScroll:true}));
+};
+
+function focusPlayerFrame(frame){
+  try{
+    frame.focus({preventScroll:true}); const win = frame.contentWindow;
+    let doc; try { doc = frame.contentDocument; } catch(e) { doc = null; }
+    if (!doc){ win?.postMessage({type:"cinenova-player-focus"}, "*"); return; }
+    win?.focus();
+    if (doc){ const active = doc.activeElement; if (!active || active === doc.body || active === doc.documentElement){
+      const play = doc.querySelector("#pbtn, .pbtn, video, button, [tabindex='0']");
+      if (play && play !== doc.querySelector("video")) play.focus?.({preventScroll:true});
+      else { doc.body.tabIndex = -1; doc.body.focus({preventScroll:true}); }
+    }}
+  }catch(e){}
+}
+window.cinenovaForwardPlayerKey = key => {
+  const frame = $(".app-player-overlay iframe, .player-frame.player-fullscreen iframe");
+  try{
+    const win = frame?.contentWindow; if (!win) return false;
+    let doc; try { doc = frame.contentDocument; } catch(e) { doc = null; }
+    if (!doc){ win.postMessage({type:"cinenova-player-key", key}, "*"); return true; }
+    const target = doc.activeElement || doc.body;
+    const legacyCode = ({ArrowLeft:37,ArrowUp:38,ArrowRight:39,ArrowDown:40,Enter:13," ":32})[key];
+    const keyEvent = new win.KeyboardEvent("keydown", {key, code:key === " " ? "Space" : key, bubbles:true, cancelable:true});
+    try { Object.defineProperty(keyEvent, "keyCode", {get:() => legacyCode}); Object.defineProperty(keyEvent, "which", {get:() => legacyCode}); } catch(e){}
+    target.dispatchEvent(keyEvent);
+    target.dispatchEvent(new win.KeyboardEvent("keyup", {key, code:key === " " ? "Space" : key, bubbles:true, cancelable:true}));
+    if (key === "Enter" && target !== doc.body && target.matches?.("button,a,select,input,[role='button'],[tabindex='0']")) target.click();
+    return true;
+  }catch(e){ return false; }
 };
 
 async function person(id){
@@ -935,10 +954,14 @@ function router(){
   }
   cleanup.splice(0).forEach(f => { try{ f(); }catch(e){} });
   routeToken++;
-  closeSugg();
   const {parts, q} = parseHash();
-  window.scrollTo({top:0, behavior:"instant"});
-  $$(`[data-r]`).forEach(a => a.classList.toggle("active", a.dataset.r === (parts[0] || "")));
+  document.documentElement.style.scrollBehavior = "auto";
+  window.scrollTo(0, 0); document.documentElement.scrollTop = 0; document.body.scrollTop = 0;
+  requestAnimationFrame(() => { window.scrollTo(0, 0); document.documentElement.style.removeProperty("scroll-behavior"); });
+  const activeRoute = parts[0] === "lista"
+    ? ((parts[1] || "").startsWith("infantiles") ? "infantiles" : (parts[1] || "lista"))
+    : (parts[0] || "");
+  $$(`[data-r]`).forEach(a => a.classList.toggle("active", a.dataset.r === activeRoute));
   const [a, b] = parts;
   if (!a) return home();
   if (a === "peliculas") return explore("movie", q);
@@ -965,8 +988,7 @@ function openModal(html, cls = "", locked = false){
 }
 function closeModal(){ if (modalLocked) return; $("#modal").classList.add("hidden"); $("#mbody").innerHTML = ""; }
 function exitPlayerFullscreen(){
-  $$(".player-frame.player-fullscreen").forEach(player => player.classList.remove("player-fullscreen"));
-  stopTvPlayerRemote();
+  window.cinenovaExitPlayerFullscreen?.();
   if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
 }
 function handleAppBack(){
@@ -984,31 +1006,106 @@ $("#mclose").onclick = closeModal;
 $("#modal").onclick = e => { if (e.target.id === "modal") closeModal(); };
 document.addEventListener("keydown", e => {
   const editing = e.target.matches("input,textarea,select,[contenteditable='true']");
-  if (tvPlayerRemoteActive && !editing){
-    const moves = {ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]};
-    if (moves[e.key]){
-      e.preventDefault(); e.stopImmediatePropagation();
-      const [dx,dy] = moves[e.key], step = e.repeat ? 54 : 36;
-      tvRemoteCursorX = Math.max(12, Math.min(innerWidth - 12, tvRemoteCursorX + dx * step));
-      tvRemoteCursorY = Math.max(12, Math.min(innerHeight - 12, tvRemoteCursorY + dy * step));
-      positionTvRemoteCursor(); revealTvRemoteCursor();
-      return;
-    }
-    if (["Enter"," ","Select"].includes(e.key) && !e.repeat){
-      e.preventDefault(); e.stopImmediatePropagation();
-      revealTvRemoteCursor();
-      window.CinenovaTvRemote?.tap(tvRemoteCursorX, tvRemoteCursorY);
-      return;
-    }
-  }
   if (["Escape","Backspace"].includes(e.key) && !editing){ if (handleAppBack()){ e.preventDefault(); e.stopImmediatePropagation(); } }
+  if ($(".player-frame.player-fullscreen") && isTvMode && !editing) return;
+  if (isTvMode && e.target.matches("#searchQuery") && e.key === "Enter" && e.target.readOnly){
+    e.preventDefault(); e.target.readOnly = false; e.target.blur(); e.target.focus(); e.target.select(); return;
+  }
+  if (isTvMode && e.target.matches("#searchQuery") && e.key === "ArrowDown"){
+    const first = $("#grid .card"); if (first){ e.preventDefault(); first.focus({preventScroll:true}); first.scrollIntoView({block:"center",inline:"nearest",behavior:"smooth"}); return; }
+  }
   if (e.key === "Enter" && e.target.matches('[role="button"][tabindex="0"]') && !e.target.matches("button,a")){ e.preventDefault(); e.target.click(); return; }
   if (!isTvMode || editing || !e.key.startsWith("Arrow")) return;
+  const current = document.activeElement;
+  const sideMenu = current.closest("#tvSidebar");
+  if (sideMenu){
+    if (e.key === "ArrowUp" || e.key === "ArrowDown"){
+      const menuItems = $$("a[href],button:not(:disabled)", sideMenu).filter(el => el.getClientRects().length && getComputedStyle(el).display !== "none");
+      const at = menuItems.indexOf(current), next = menuItems[at + (e.key === "ArrowUp" ? -1 : 1)];
+      if (next){ e.preventDefault(); next.focus({preventScroll:true}); next.scrollIntoView({block:"nearest"}); }
+      return;
+    }
+    if (e.key === "ArrowRight"){
+      const mainItems = $$("#app a[href],#app button:not(:disabled),#app select:not(:disabled),#app input:not(:disabled)")
+        .filter(el => el.getClientRects().length && !el.closest("[hidden]"));
+      if (mainItems[0]){ e.preventDefault(); mainItems[0].focus({preventScroll:true}); mainItems[0].scrollIntoView({block:"nearest",inline:"nearest"}); }
+      return;
+    }
+    return;
+  }
+  const player = $(".player-frame.player-fullscreen");
+  if (player) return;
+  const heroActions = current.closest(".hero .actions");
+  if (heroActions && (e.key === "ArrowLeft" || e.key === "ArrowRight")){
+    const actions = $$("[data-hero-action]", heroActions), index = actions.indexOf(current);
+    const next = actions[index + (e.key === "ArrowLeft" ? -1 : 1)];
+    if (index >= 0){ e.preventDefault(); if (next) next.focus({preventScroll:true}); return; }
+  }
+  if (heroActions && e.key === "ArrowDown"){
+    const thumb = $(".hero-thumb");
+    if (thumb){ e.preventDefault(); thumb.focus({preventScroll:true}); thumb.scrollIntoView({block:"nearest",inline:"center"}); return; }
+  }
+  if (heroActions && e.key === "ArrowUp"){
+    e.preventDefault(); window.scrollTo({top:0,behavior:"smooth"}); return;
+  }
+  const episodeRail = current.closest(".episode-list");
+  if (episodeRail && (e.key === "ArrowLeft" || e.key === "ArrowRight")){
+    const cards = $$(".episode-card", episodeRail).filter(el => !el.hidden);
+    const index = cards.indexOf(current), next = cards[index + (e.key === "ArrowLeft" ? -1 : 1)];
+    if (index >= 0){ e.preventDefault(); if (next){ next.focus({preventScroll:true}); next.scrollIntoView({block:"nearest",inline:"center",behavior:"smooth"}); } return; }
+  }
+  const grid = current.closest(".grid");
+  if (current.matches(".card") && grid){
+    const cards = $$(".card", grid).filter(el => !el.hidden && el.getClientRects().length);
+    const index = cards.indexOf(current);
+    if (index >= 0){
+      const columns = Math.max(1, getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length);
+      const delta = e.key === "ArrowUp" ? -columns : e.key === "ArrowDown" ? columns : e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
+      if (delta){ e.preventDefault(); const next = cards[index + delta];
+        if (next){ next.focus({preventScroll:true}); next.scrollIntoView({block:"nearest",inline:"nearest",behavior:"smooth"}); }
+        else if (e.key === "ArrowUp" && index < columns){
+          const top = $("#searchQuery") || $(".tabs .chip.on") || $(".page h1");
+          if (top){ if (top.tagName === "H1") top.setAttribute("tabindex","-1"); top.focus({preventScroll:true}); }
+          window.scrollTo({top:0,behavior:"smooth"});
+        }
+        return;
+      }
+    }
+  }
+  if (e.key === "ArrowUp" && current.matches(".scroller .card")){
+    const rows = $$("section.row"), row = current.closest("section.row");
+    if (row && rows[0] === row){
+      const firstAction = $(".hero [data-hero-action='watch']");
+      if (firstAction){ e.preventDefault(); firstAction.focus({preventScroll:true}); window.scrollTo({top:0,behavior:"smooth"}); return; }
+    }
+  }
+  if (e.key === "ArrowDown" && current.closest(".dinfo .actions")){
+    const episode = $(".episode-card"); if (episode){ e.preventDefault(); episode.focus({preventScroll:true}); episode.scrollIntoView({block:"center",inline:"nearest"}); return; }
+  }
+  const scroller = current.closest(".scroller");
+  if (current.matches(".card") && scroller && (e.key === "ArrowLeft" || e.key === "ArrowRight")){
+    const cards = $$(".card", scroller).filter(el => !el.hidden && el.getClientRects().length);
+    const at = cards.indexOf(current), next = cards[at + (e.key === "ArrowLeft" ? -1 : 1)];
+    e.preventDefault();
+    if (next){ next.focus({preventScroll:true}); next.scrollIntoView({block:"nearest",inline:"nearest",behavior:"smooth"}); }
+    else if (e.key === "ArrowLeft" && at === 0) $("#tvSidebar [data-r].active")?.focus({preventScroll:true});
+    return;
+  }
+  const rowLink = current.closest(".rhead")?.querySelector("a");
+  if (e.key === "ArrowDown" && rowLink === current){
+    const firstCard = current.closest(".row")?.querySelector(".scroller .card");
+    if (firstCard){ e.preventDefault(); firstCard.focus({preventScroll:true}); firstCard.scrollIntoView({block:"nearest",inline:"nearest"}); }
+    return;
+  }
+  if (e.key === "ArrowDown" && current.closest(".hero .actions")){
+    const firstCard = $(".row .scroller .card");
+    if (firstCard){ e.preventDefault(); firstCard.focus({preventScroll:true}); firstCard.scrollIntoView({block:"nearest",inline:"nearest"}); }
+    return;
+  }
   const directions = {ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]};
   const [dx,dy] = directions[e.key];
   const focusables = $$('a[href],button:not(:disabled),select:not(:disabled),input:not(:disabled),[tabindex="0"]')
     .filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== "hidden");
-  let current = document.activeElement;
   if (!focusables.includes(current)){ focusables[0]?.focus(); return; }
   const from = current.getBoundingClientRect(), fx = from.left + from.width/2, fy = from.top + from.height/2;
   const candidates = focusables.filter(el => el !== current).map(el => {
@@ -1016,8 +1113,14 @@ document.addEventListener("keydown", e => {
     const px = (x-fx)*dx, py = (y-fy)*dy, primary = dx ? px : py, cross = dx ? Math.abs(y-fy) : Math.abs(x-fx);
     return {el, primary, cross, score:primary + cross*1.6};
   }).filter(v => v.primary > 4).sort((a,b) => a.score-b.score);
-  if (candidates.length){ e.preventDefault(); candidates[0].el.focus({preventScroll:true}); candidates[0].el.scrollIntoView({block:"nearest",inline:"nearest",behavior:"smooth"}); return; }
-  const scroller = current.closest(".scroller");
+  if (candidates.length){
+    e.preventDefault(); candidates[0].el.focus({preventScroll:true});
+    const atTopHero = candidates[0].el.closest(".hero, .dhero");
+    candidates[0].el.scrollIntoView({block:atTopHero && e.key === "ArrowUp" ? "start" : "nearest",inline:"nearest",behavior:"smooth"});
+    if (atTopHero && e.key === "ArrowUp") window.scrollTo({top:0,behavior:"smooth"});
+    return;
+  }
+  if (e.key === "ArrowUp"){ e.preventDefault(); window.scrollTo({top:0,behavior:"smooth"}); }
   if (scroller && dx){ e.preventDefault(); scroller.scrollBy({left:dx*scroller.clientWidth*.75,behavior:"smooth"}); }
 });
 let toastT;
@@ -1050,28 +1153,7 @@ document.addEventListener("click", e => {
   }
   const sc = e.target.closest("[data-scroll]");
   if (sc){ e.preventDefault(); document.getElementById(sc.dataset.scroll)?.scrollIntoView({behavior:"smooth"}); return; }
-  if (!e.target.closest(".sbox")) closeSugg();
 });
-
-/* Buscador con sugerencias */
-const qIn = $("#q"), sugg = $("#sugg");
-function closeSugg(){ sugg.classList.remove("open"); }
-let sTimer;
-qIn.addEventListener("input", () => {
-  clearTimeout(sTimer);
-  const v = qIn.value.trim();
-  if (v.length < 2){ closeSugg(); return; }
-  sTimer = setTimeout(async () => {
-    const d = await api("/search/multi", {query:v, include_adult:false}).catch(() => null);
-    if (!d || qIn.value.trim() !== v) return;
-    const items = d.results.filter(x => x.poster_path || x.profile_path).slice(0, 7);
-    sugg.innerHTML = items.map(x => `<a class="sg" href="#/${x.media_type}/${x.id}"><img src="${img(x.poster_path || x.profile_path, "w92")}" alt=""><div><b>${esc(titleOf(x))}</b><span>${x.media_type === "person" ? "Persona" : typeName(x.media_type)}${year(x) ? " · " + year(x) : ""}</span></div></a>`).join("")
-      + `<a class="sg all" href="#/buscar?q=${encodeURIComponent(v)}">Ver todos los resultados ›</a>`;
-    sugg.classList.add("open");
-  }, 300);
-});
-qIn.addEventListener("keydown", e => { if (e.key === "Enter"){ const v = qIn.value.trim(); if (v){ location.hash = "#/buscar?q=" + encodeURIComponent(v); qIn.blur(); } } });
-qIn.addEventListener("focus", () => { if (sugg.innerHTML && qIn.value.trim().length > 1) sugg.classList.add("open"); });
 
 /* ===== INICIO ===== */
 $("#yr").textContent = new Date().getFullYear();

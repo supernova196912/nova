@@ -80,6 +80,53 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-remote-keys>
 })();
 </script>`;
 
+const TV_PLAYER_CONTROLS_SCRIPT = `<script data-cinenova-tv-controls>
+(() => {
+  const hideSelector = [
+    '.vjs-fullscreen-control','.vjs-playback-rate','.vjs-settings-button',
+    '.plyr__control[data-plyr="fullscreen"]','.plyr__control[data-plyr="speed"]',
+    '.jw-icon-fullscreen','.jw-settings-submenu-button','.shaka-fullscreen-button',
+    '[aria-label*="fullscreen" i]','[title*="fullscreen" i]','[aria-label*="pantalla completa" i]','[title*="pantalla completa" i]','[aria-label*="expandir" i]','[title*="expandir" i]','[aria-label*="maximizar" i]','[title*="maximizar" i]',
+    '[aria-label*="velocidad" i]','[title*="velocidad" i]','[aria-label*="playback rate" i]','[title*="playback rate" i]',
+    '[aria-label*="speed" i]','[title*="speed" i]','[aria-label*="settings" i]','[title*="settings" i]',
+    '[aria-label*="configuración" i]','[title*="configuración" i]','[aria-label*="ajustes" i]','[title*="ajustes" i]'
+  ].join(',');
+  const hiddenLabel = /(fullscreen|full.?screen|pantalla completa|expandir|maximizar|playback.?rate|velocidad|speed|settings?|config|configuraci[oó]n|ajustes|gear)/i;
+  const concealControls = () => {
+    document.querySelectorAll(hideSelector).forEach(el => {
+      const control = el.closest('button,a,[role="button"],[tabindex],[onclick]') || el;
+      control.style.setProperty('display', 'none', 'important');
+      control.setAttribute('aria-hidden', 'true');
+      control.tabIndex = -1;
+      if (control === document.activeElement) control.blur?.();
+    });
+    document.querySelectorAll('button,a,[role="button"],[tabindex],[onclick]').forEach(control => {
+      const label = [control.getAttribute('aria-label'),control.getAttribute('title'),control.getAttribute('data-title'),control.getAttribute('data-tooltip'),control.className,control.id,control.textContent].join(' ');
+      if (!hiddenLabel.test(label)) return;
+      control.style.setProperty('display', 'none', 'important');
+      control.setAttribute('aria-hidden', 'true'); control.tabIndex = -1;
+      if (control === document.activeElement) control.blur?.();
+    });
+  };
+  const findSeek = () => {
+    const list = [...document.querySelectorAll('input[type="range"],[role="slider"],.vjs-progress-control,.plyr__progress,.jw-slider-time,[class*="seek" i],[id*="seek" i],[class*="timeline" i],[id*="timeline" i],[class*="progress" i],[id*="progress" i]')];
+    return list.find(el => el.getClientRects().length && !el.closest('[aria-hidden="true"]')) || document.querySelector('video');
+  };
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'ArrowUp') return;
+    const target = event.target, rect = target?.getBoundingClientRect?.();
+    const bottomControls = target?.closest?.('.controls,.controlbar,.control-bar,.player-controls,.vjs-control-bar,.plyr__controls,.jw-controlbar')?.getBoundingClientRect?.();
+    if ((!bottomControls || bottomControls.top < innerHeight * .4) && (!rect || rect.top < innerHeight * .52)) return;
+    const seek = findSeek(); if (!seek || seek === target) return;
+    if (!seek.hasAttribute('tabindex') && !seek.matches('input,button,[role="slider"]')) seek.tabIndex = 0;
+    event.preventDefault(); event.stopImmediatePropagation(); seek.focus({preventScroll:true});
+    seek.scrollIntoView?.({block:'nearest',inline:'nearest'});
+  }, true);
+  concealControls();
+  new MutationObserver(concealControls).observe(document.documentElement, {subtree:true,childList:true});
+})();
+</script>`;
+
 function rewriteText(text, contentType, requestUrl) {
   const proxyOrigin = new URL(requestUrl).origin + "/unlimplay";
   let rewritten = text
@@ -89,8 +136,10 @@ function rewriteText(text, contentType, requestUrl) {
     .replaceAll("http:\\/\\/unlimplay.com", proxyOrigin.replaceAll("/", "\\/"));
   rewritten = rewritten.replace(/(["'`])\/(?=(?:f\.php|sw-adblock\.js|img\/|cdn-cgi\/))/g, "$1/unlimplay/");
   rewritten = rewritten.replace(/scope\s*:\s*(["'])\/(["'])/g, "scope: $1/unlimplay/$2");
-  if (/text\/html/i.test(contentType) && new URL(requestUrl).pathname.startsWith("/unlimplay/f/embed/")) {
-    rewritten = rewritten.replace(/<head([^>]*)>/i, (head) => head + AD_FILTER_SCRIPT + PLAYER_REMOTE_SCRIPT);
+  const requestURL = new URL(requestUrl);
+  const tvPlayer = requestURL.searchParams.get("cn_tv") === "1";
+  if (/text\/html/i.test(contentType) && requestURL.pathname.startsWith("/unlimplay/f/embed/")) {
+    rewritten = rewritten.replace(/<head([^>]*)>/i, (head) => head + AD_FILTER_SCRIPT + (tvPlayer ? PLAYER_REMOTE_SCRIPT + TV_PLAYER_CONTROLS_SCRIPT : ""));
   }
   return rewritten;
 }
@@ -109,6 +158,7 @@ export async function onRequest({ request, params }) {
   const incomingUrl = new URL(request.url);
   const upstreamUrl = new URL(`https://unlimplay.com/${path}`);
   upstreamUrl.search = incomingUrl.search;
+  upstreamUrl.searchParams.delete("cn_tv");
   const headers = new Headers();
   for (const name of ["Accept", "Accept-Language", "Cookie", "Range", "If-Range", "If-None-Match", "If-Modified-Since", "Content-Type", "X-ULP-Token", "User-Agent"]) {
     const value = request.headers.get(name);

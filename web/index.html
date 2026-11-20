@@ -699,6 +699,8 @@ async function detail(type, id){
   remember(d, type);
   const title = titleOf(d);
   const appPlayback = isNativeApp();
+  const tvApp = appPlayback && isTvMode;
+  const defaultTvTab = type === "movie" ? "similares" : "reparto";
   document.title = title + " — CINENOVA";
   const otitle = d.original_title || d.original_name;
   const cert = getCert(d, type);
@@ -761,26 +763,26 @@ async function detail(type, id){
         <div class="actions">
           <button class="btn primary" data-act="play-detail" data-tab="ver" data-target="player-${d.id}" data-type="${type}" data-id="${d.id}">▶ Reproducir</button>
           <button class="btn ghost ${fav ? "fav-on" : ""}" data-act="fav" data-type="${type}" data-id="${d.id}">${fav ? "✓ En Mi lista" : "+ Mi lista"}</button>
-          <button class="btn ghost" data-act="share">↗ Compartir</button>
+          ${tvApp ? "" : '<button class="btn ghost" data-act="share">↗ Compartir</button>'}
         </div>
-        ${crewBits.length ? `<div class="crew">${crewBits.join("")}</div>` : ""}
+        ${crewBits.length && !tvApp ? `<div class="crew">${crewBits.join("")}</div>` : ""}
       </div>
     </div>
   </section>
   ${appPlayback && type === "tv" ? episodeBrowserHTML : ""}
   <nav class="detail-tabs" role="tablist" aria-label="Secciones del título">
-    ${(appPlayback ? [["reparto","Reparto"],["similares","Similares"],["trailer","Tráiler"]] : [["ver","Ver"],["reparto","Reparto"],["detalles","Detalles"],["similares","Similares"],["trailer","Tráiler"]]).map(([key,label], i) => `<button class="detail-tab ${i === 0 && !appPlayback ? "active" : ""}" role="tab" aria-selected="${i === 0 && !appPlayback}" data-detail-tab="${key}">${label}</button>`).join("")}
+    ${(appPlayback ? [["reparto","Reparto"],["similares","Similares"],["trailer","Tráiler"]] : [["ver","Ver"],["reparto","Reparto"],["detalles","Detalles"],["similares","Similares"],["trailer","Tráiler"]]).map(([key,label], i) => `<button class="detail-tab ${(!appPlayback && i === 0) || (tvApp && key === defaultTvTab) ? "active" : ""}" role="tab" aria-selected="${(!appPlayback && i === 0) || (tvApp && key === defaultTvTab)}" data-detail-tab="${key}">${label}</button>`).join("")}
   </nav>
   ${appPlayback ? "" : `<section class="detail-panel" id="panel-ver" role="tabpanel">
     <h2 class="player-title">Ver ahora: ${esc(title)}</h2>
     <div class="player-frame" id="player-${d.id}"><iframe src="about:blank" title="Reproductor de video" tabindex="0" width="100%" height="100%" frameBorder="0" allowFullScreen allow="autoplay; fullscreen; picture-in-picture; encrypted-media; remote-playback" referrerPolicy="origin"></iframe></div>
     ${type === "tv" ? episodeBrowserHTML : ""}
   </section>`}
-  <section class="detail-panel" id="panel-reparto" role="tabpanel" hidden>${staticRow("Reparto", cast)}</section>
+  <section class="detail-panel" id="panel-reparto" role="tabpanel" ${tvApp && defaultTvTab === "reparto" ? "" : "hidden"}>${staticRow("Reparto", cast)}${tvApp && crewBits.length ? `<section class="block"><h2>${type === "movie" ? "Dirección y guion" : "Creación"}</h2><div class="crew">${crewBits.join("")}</div></section>` : ""}</section>
   ${appPlayback ? "" : `<section class="detail-panel" id="panel-detalles" role="tabpanel" hidden>
     <section class="block"><h2>Información</h2><div class="info">${info}</div>${kws.length ? `<div style="margin-top:18px"><b class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:1px">Palabras clave</b><div class="kw">${kws.map(k => `<span>${esc(k.name)}</span>`).join("")}</div></div>` : ""}</section>
   </section>`}
-  <section class="detail-panel" id="panel-similares" role="tabpanel" hidden>${staticRow("Recomendadas", recs)}${staticRow("Títulos similares", sim)}</section>
+  <section class="detail-panel" id="panel-similares" role="tabpanel" ${tvApp && defaultTvTab === "similares" ? "" : "hidden"}>${staticRow("Recomendadas", recs)}${staticRow("Títulos similares", sim)}${tvApp && defaultTvTab === "similares" && !recs && !sim ? '<section class="block"><p class="muted">No hay títulos similares disponibles.</p></section>' : ""}</section>
   <section class="detail-panel" id="panel-trailer" role="tabpanel" hidden>${staticRow("Tráileres y videos", vids)}</section>`;
   $$("[data-detail-tab]").forEach(tab => tab.onclick = () => activateDetailTab(tab.dataset.detailTab));
   const playerFrame = $(`#player-${d.id} iframe`);
@@ -828,7 +830,9 @@ function filterEpisodeCards(query){
 }
 function startDetailPlayback(id, type, season = 1, episode = 1){
   const path = type === "tv" ? `f/embed/tv/${id}/${season}/${episode}` : `f/embed/movie/${id}`;
-  const src = unlimplayUrl(path);
+  const playerURL = new URL(unlimplayUrl(path), location.href);
+  if (isTvMode) playerURL.searchParams.set("cn_tv", "1");
+  const src = playerURL.href;
   if (isNativeApp()){
     $(".app-player-overlay")?.remove();
     const player = document.createElement("div"); player.className = "player-frame player-fullscreen app-player-overlay"; player.id = `player-${id}`;

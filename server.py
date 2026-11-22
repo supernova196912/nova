@@ -89,24 +89,122 @@ UNLIMPLAY_AD_SCRIPT = """<script data-cinenova-ad-filter>
 })();
 </script>""" % json.dumps(list(UNLIMPLAY_AD_DOMAINS))
 
+UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
+(() => {
+  const send = type => { try { window.parent.postMessage({type}, "*"); } catch (_) {} };
+  const install = doc => {
+    if (!doc?.documentElement || doc.documentElement.dataset.cinenovaPlayerBridge) return;
+    doc.documentElement.dataset.cinenovaPlayerBridge = "1";
+    const style = doc.createElement("style");
+    style.textContent = 'button:focus,a:focus,select:focus,input:focus,[role="button"]:focus,[role="menuitem"]:focus,[role="option"]:focus,[tabindex]:focus{outline:3px solid #74a0ff!important;outline-offset:2px!important;box-shadow:0 0 14px rgba(76,130,255,.7)!important}';
+    (doc.head || doc.documentElement).appendChild(style);
+    const visibleControls = () => [...doc.querySelectorAll('button:not(:disabled),a[href],select:not(:disabled),input:not(:disabled):not([type="hidden"]),[role="button"],[role="menuitem"],[role="option"],[tabindex]')]
+      .filter(el => !el.matches("iframe") && el.getClientRects().length && (()=>{const s=doc.defaultView.getComputedStyle(el);return s.visibility !== "hidden" && s.display !== "none" && el.getAttribute("aria-hidden") !== "true";})());
+    const promoteVisibleControls = () => visibleControls().forEach(el => { if (el.tabIndex < 0) el.tabIndex = 0; });
+    promoteVisibleControls();
+    new MutationObserver(promoteVisibleControls).observe(doc.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["class","style","hidden","aria-hidden"]});
+    const view = doc.defaultView;
+    view.addEventListener("keyup", event => { if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
+    view.addEventListener("keypress", event => { if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
+    view.addEventListener("keydown", event => {
+      if (["Escape", "Backspace", "BrowserBack"].includes(event.key)) {
+        event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-exit-player"); return;
+      }
+      send("cinenova-player-activity");
+      const target = doc.activeElement || doc.body, video = doc.querySelector("video");
+      const controls = visibleControls(), focused = target.closest?.('button,a[href],select,input,[role="button"],[role="menuitem"],[role="option"],[tabindex]');
+      const inMenu = !!target.closest?.('[role="menu"],[role="listbox"],.dropdown-menu,[class*="language-menu" i]');
+      if (["Enter", " ", "MediaPlayPause"].includes(event.key)) {
+        if (event.key === "MediaPlayPause" && inMenu) return;
+        if (focused && event.key !== "MediaPlayPause") {
+          event.preventDefault(); const before=new Set(controls); focused.click?.();
+          requestAnimationFrame(()=>{ const opened=visibleControls().filter(el=>!before.has(el)); const option=opened.find(el=>el.matches('[role="option"],[role="menuitem"]') || el.closest?.('[role="menu"],[role="listbox"],.dropdown-menu,[class*="language-menu" i]')); option?.focus({preventScroll:true}); });
+        } else if (video) { event.preventDefault(); if(video.paused) video.play?.().catch?.(()=>{}); else video.pause(); }
+        else if (focused) { event.preventDefault(); focused.click?.(); }
+        return;
+      }
+      if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(event.key)) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (focused?.matches?.('input[type="range"],[role="slider"],.vjs-progress-control,.plyr__progress,.jw-slider-time,[class*="progress" i],[class*="seek" i]')) {
+        const video = doc.querySelector("video");
+        if (video && (event.key === "ArrowLeft" || event.key === "ArrowRight")) video.currentTime=Math.max(0,video.currentTime+(event.key === "ArrowLeft"?-10:10));
+        return;
+      }
+      if (!controls.includes(focused)){ controls[0]?.focus({preventScroll:true}); return; }
+      const rect=focused.getBoundingClientRect(), top=Math.min(...controls.map(el=>el.getBoundingClientRect().top));
+      const topRow=rect.top<=top+Math.max(40,rect.height*.8), row=controls.filter(el=>Math.abs(el.getBoundingClientRect().top-rect.top)<Math.max(30,rect.height*.7));
+      if ((event.key === "ArrowUp" && topRow) || (event.key === "ArrowRight" && topRow && row.indexOf(focused)===row.length-1)) { event.preventDefault(); send("cinenova-player-exit-focus"); return; }
+      const dx=event.key==="ArrowLeft"?-1:event.key==="ArrowRight"?1:0, dy=event.key==="ArrowUp"?-1:event.key==="ArrowDown"?1:0, cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
+      const next=controls.filter(el=>el!==focused).map(el=>{const r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,p=dx?(x-cx)*dx:(y-cy)*dy,c=dx?Math.abs(y-cy):Math.abs(x-cx);return {el,score:p+c*1.5,p};}).filter(x=>x.p>4).sort((a,b)=>a.score-b.score)[0];
+      if(next){next.el.focus({preventScroll:true});next.el.scrollIntoView?.({block:"nearest",inline:"nearest"});}
+    }, true);
+    let lastFocusedControl = null;
+    const observeFrame = frame => {
+      frame.tabIndex = -1;
+      if (frame.dataset.cinenovaTvObserved) return;
+      frame.dataset.cinenovaTvObserved = "1";
+      frame.addEventListener("load", () => { try { install(frame.contentDocument); } catch (_) {} });
+      try { if (frame.contentDocument?.readyState === "complete") install(frame.contentDocument); } catch (_) {}
+    };
+    doc.querySelectorAll("iframe").forEach(observeFrame);
+    doc.addEventListener("focusin", event => { if (event.target.matches?.('button,a[href],select,input,[role="button"],[role="menuitem"],[role="option"],[tabindex]') && !event.target.matches("iframe")) lastFocusedControl=event.target; }, true);
+    doc.addEventListener("focus", event => {
+      const frame=event.target;
+      if (!frame.matches?.("iframe")) return;
+      let crossOrigin=false; try { void frame.contentDocument?.documentElement; } catch (_) { crossOrigin=true; }
+      if (!crossOrigin) return;
+      frame.blur?.(); (lastFocusedControl?.isConnected ? lastFocusedControl : visibleControls()[0])?.focus({preventScroll:true});
+    }, true);
+    new MutationObserver(() => doc.querySelectorAll("iframe").forEach(observeFrame)).observe(doc.documentElement, {childList:true,subtree:true});
+    view.addEventListener("message", event => {
+      if (event.source !== window.parent) return;
+      if (["cinenova-player-focus", "cinenova-player-autoplay"].includes(event.data?.type)) {
+        const play = doc.querySelector('#pbtn,.pbtn,.play-overlay,[class*="play-overlay" i],[aria-label*="play" i],[title*="play" i],video');
+        if (play && play.tagName !== "VIDEO") { play.focus?.({preventScroll:true}); if (event.data.type === "cinenova-player-autoplay") play.click?.(); }
+        else if (play?.tagName === "VIDEO") { if (event.data.type === "cinenova-player-autoplay") play.play?.().catch?.(() => {}); doc.body.tabIndex = -1; doc.body.focus({preventScroll:true}); }
+        return;
+      }
+      if (event.data?.type !== "cinenova-player-key") return;
+      const key=event.data.key;
+      if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Enter"," ","MediaPlayPause"].includes(key)) return;
+      const video = doc.querySelector("video");
+      const target=doc.activeElement||doc.body, menuControl=!!target.closest?.('[role="menu"],[role="listbox"],.dropdown-menu,[class*="language-menu" i]');
+      const focused=target.closest?.('button,a[href],select,input,[role="button"],[role="menuitem"],[role="option"],[tabindex]');
+      if (video && ["Enter"," ","MediaPlayPause"].includes(key) && !menuControl && !focused) { if(video.paused) video.play?.().catch?.(()=>{}); else video.pause(); }
+      else {
+        const code={ArrowLeft:37,ArrowUp:38,ArrowRight:39,ArrowDown:40,Enter:13," ":32}[key];
+        const input=new doc.defaultView.KeyboardEvent("keydown",{key,code:key === " "?"Space":key,bubbles:true,cancelable:true});
+        try{Object.defineProperty(input,"keyCode",{get:()=>code});Object.defineProperty(input,"which",{get:()=>code});}catch(_){}
+        target.dispatchEvent(input);
+      }
+      if (!video && !["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(key)) doc.querySelectorAll("iframe").forEach(frame=>frame.contentWindow?.postMessage(event.data,"*"));
+    });
+  };
+  install(document);
+})();
+</script>'''
+
+
+def _clean_env_value(value: str) -> str:
+    return value.strip().lstrip("\ufeff").strip().strip("\"'").strip()
+
 
 def get_env_value(name: str) -> str:
     """Read a setting from the process environment or the private local .env."""
-    value = os.environ.get(name, "").strip()
+    value = _clean_env_value(os.environ.get(name, ""))
     if value:
         return value
     env_file = PROJECT_ROOT / ".env"
     if not env_file.is_file():
         return ""
     for line in env_file.read_text(encoding="utf-8-sig").splitlines():
-        line = line.strip()
+        line = line.strip().lstrip("\ufeff")
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, candidate = line.split("=", 1)
-        if key.strip() == name:
-            return candidate.strip().strip("\"'")
+        if key.strip().lstrip("\ufeff") == name:
+            return _clean_env_value(candidate)
     return ""
-
 
 class PeliskongHandler(SimpleHTTPRequestHandler):
     """Expose only web/ and remote/, never the rest of the project tree."""
@@ -214,7 +312,7 @@ class PeliskongHandler(SimpleHTTPRequestHandler):
         if parsed.query:
             upstream_url += "?" + parsed.query
         headers = {"Accept": "application/json", "User-Agent": "CINENOVA/1.0"}
-        if api_key.startswith("eyJ"):
+        if re.fullmatch(r"eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", api_key):
             headers["Authorization"] = "Bearer " + api_key
         else:
             separator = "&" if "?" in upstream_url else "?"
@@ -307,10 +405,17 @@ class PeliskongHandler(SimpleHTTPRequestHandler):
                                   lambda m: m.group("q") + m.group("slash") + "unlimplay/", text)
                     text = re.sub(r"scope\s*:\s*([\"'])/([\"'])",
                                   r"scope: \1/unlimplay/\2", text)
-                    if "text/html" in content_type.lower() and parsed.path.startswith(UNLIMPLAY_PREFIX + "/f/embed/"):
-                        script = UNLIMPLAY_AD_SCRIPT
-                        text = re.sub(r"<head([^>]*)>", lambda m: m.group(0) + script, text,
-                                      count=1, flags=re.I)
+                    if "text/html" in content_type.lower() and parsed.path.startswith(UNLIMPLAY_PREFIX + "/"):
+                        scripts = UNLIMPLAY_TV_SCRIPT
+                        if parsed.path.startswith(UNLIMPLAY_PREFIX + "/f/embed/"):
+                            scripts += UNLIMPLAY_AD_SCRIPT
+                        html_start = re.search(r"<html\b[^>]*>", text, flags=re.I)
+                        if html_start:
+                            text = text[:html_start.end()] + scripts + text[html_start.end():]
+                        else:
+                            doctype = re.match(r"\s*<!doctype[^>]*>", text, flags=re.I)
+                            insert_at = doctype.end() if doctype else 0
+                            text = text[:insert_at] + scripts + text[insert_at:]
                     transformed = text.encode(encoding, errors="replace")
 
             self.send_response(status)

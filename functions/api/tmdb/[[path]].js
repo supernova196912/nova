@@ -36,7 +36,7 @@ export function onRequestOptions({ request, env }) {
 }
 
 export async function onRequestGet({ request, env, params }) {
-  const apiKey = env.TMDB_API_KEY;
+  const apiKey = String(env.TMDB_API_KEY || "").trim();
   if (!apiKey) {
     return jsonResponse({ error: "tmdb_not_configured" }, 503, request, env);
   }

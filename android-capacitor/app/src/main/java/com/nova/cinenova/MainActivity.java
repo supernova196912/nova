@@ -2,10 +2,12 @@ package com.nova.cinenova;
 
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.content.pm.ActivityInfo;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -211,6 +213,26 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public void setPlayerFullscreen(boolean active) {
             runOnUiThread(() -> MainActivity.this.setPlayerFullscreen(active));
+        }
+
+        @JavascriptInterface
+        public void sendPlayerTap(float normX, float normY) {
+            if (Float.isNaN(normX) || Float.isInfinite(normX) || Float.isNaN(normY) || Float.isInfinite(normY)
+                || normX < 0f || normX > 1f || normY < 0f || normY > 1f) return;
+            runOnUiThread(() -> {
+                WebView target = bridge == null ? null : bridge.getWebView();
+                if (target == null || target.getWidth() <= 0 || target.getHeight() <= 0) return;
+                float x = normX * target.getWidth();
+                float y = normY * target.getHeight();
+                long downTime = SystemClock.uptimeMillis();
+                MotionEvent down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0);
+                target.dispatchTouchEvent(down);
+                down.recycle();
+                long upTime = SystemClock.uptimeMillis();
+                MotionEvent up = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, x, y, 0);
+                target.dispatchTouchEvent(up);
+                up.recycle();
+            });
         }
     }
 

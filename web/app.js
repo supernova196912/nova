@@ -19,6 +19,9 @@ let routeToken = 0;
 let episodeRequestToken = 0;
 const app = $("#app");
 let isTvMode = false;
+let lastPlaybackTrigger = null;
+let playerExitTimer = 0;
+let suppressPlayerNativeFullscreenExit = false;
 function isNativeApp(){
   return Boolean((window.Capacitor && window.Capacitor.isNativePlatform?.())
     || (location.hostname === "localhost" && /Android/i.test(navigator.userAgent || "")));
@@ -92,7 +95,7 @@ function personCard(p, sub){
 }
 function topCard(it, i, t){ return `<a class="card" href="#/${typeOf(it, t)}/${it.id}"><span class="num">${i + 1}</span><div class="poster">${posterImg(it)}<span class="badge">★ ${score(it.vote_average)}</span></div></a>`; }
 const skel = n => Array.from({length:n}, () => `<div class="card sk"><div class="poster"></div></div>`).join("");
-function staticRow(title, inner, extra = ""){ return inner ? `<section class="block"><div class="rhead"><h2>${esc(title)}</h2>${extra}</div><div class="rwrap"><button class="arr l">‹</button><div class="scroller">${inner}</div><button class="arr r">›</button></div></section>` : ""; }
+function staticRow(title, inner, extra = ""){ return inner ? `<section class="block"><div class="rhead"><h2>${esc(title)}</h2>${extra}</div><div class="rwrap"><button class="arr l" tabindex="-1" aria-hidden="true">‹</button><div class="scroller">${inner}</div><button class="arr r" tabindex="-1" aria-hidden="true">›</button></div></section>` : ""; }
 
 /* ===== LISTAS ===== */
 const today = new Date().toISOString().slice(0, 10);
@@ -131,7 +134,7 @@ GENRE_ROWS.forEach(([g, n]) => LISTS["genero-" + g] = {t:n, type:"movie", path:"
 
 function rowsHTML(keys){
   return keys.map(k => { const L = LISTS[k];
-    return `<section class="row ${L.top ? "top" : ""}" data-list="${k}"><div class="rhead"><h2>${esc(L.t)}</h2><a href="#/lista/${k}">Ver todo ›</a></div><div class="rwrap"><button class="arr l">‹</button><div class="scroller">${skel(L.top ? 6 : 8)}</div><button class="arr r">›</button></div></section>`;
+    return `<section class="row ${L.top ? "top" : ""}" data-list="${k}"><div class="rhead"><h2>${esc(L.t)}</h2><a href="#/lista/${k}">Ver todo ›</a></div><div class="rwrap"><button class="arr l" tabindex="-1" aria-hidden="true">‹</button><div class="scroller">${skel(L.top ? 6 : 8)}</div><button class="arr r" tabindex="-1" aria-hidden="true">›</button></div></section>`;
   }).join("");
 }
 async function fillRow(sec){
@@ -406,9 +409,8 @@ async function detail(type, id){
   if (t !== routeToken) return;
   remember(d, type);
   const title = titleOf(d);
-  const appPlayback = isNativeApp();
-  const tvApp = appPlayback && isTvMode;
-  const defaultTvTab = type === "movie" ? "similares" : "reparto";
+  const overlayPlayback = isNativeApp() || isTvMode;
+  const tvApp = isNativeApp() && isTvMode;
   document.title = title + " — CINENOVA";
   const otitle = d.original_title || d.original_name;
   const cert = getCert(d, type);
@@ -430,6 +432,7 @@ async function detail(type, id){
     (d.created_by || []).forEach(c => crewBits.push(`<a href="#/person/${c.id}"><b>${esc(c.name)}</b><span>Creación</span></a>`));
   }
   const cast = (d.credits?.cast || []).slice(0, 24).map(p => personCard(p)).join("");
+  const defaultOverlayTab = cast ? "reparto" : "similares";
   const vids = (d.videos?.results || []).filter(v => v.site === "YouTube").slice(0, 12)
     .map(v => `<div class="vcard" role="button" tabindex="0" data-act="video" data-key="${esc(v.key)}"><div class="vthumb"><img loading="lazy" src="https://i.ytimg.com/vi/${esc(v.key)}/hqdefault.jpg" alt=""></div><div class="ctitle">${esc(v.name)}</div><div class="cmeta">${esc(v.type)}</div></div>`).join("");
   const recs = (d.recommendations?.results || []).filter(x => x.poster_path).map(x => card(x, type)).join("");
@@ -451,7 +454,7 @@ async function detail(type, id){
   const initialSeason = seasonList.find(s => s.season_number === 1) || seasonList[0];
   const initialSeasonNumber = initialSeason?.season_number || 1;
   const initialEpisodeCount = initialSeason?.episode_count || 1;
-  const episodeBrowserHTML = type === "tv" ? `<section class="episode-browser ${appPlayback ? "episode-browser-app" : ""}" aria-label="Capítulos de la serie">
+  const episodeBrowserHTML = type === "tv" ? `<section class="episode-browser ${overlayPlayback ? "episode-browser-app" : ""}" aria-label="Capítulos de la serie">
       <div class="episode-browser-head"><div><h3>Episodios</h3><p id="episodeSeasonLabel">Temporada ${initialSeasonNumber} · Elegí un capítulo para reproducir.</p></div>
         <label class="season-picker">Temporada<select id="playSeason">${seasonList.map(s => `<option value="${s.season_number}" data-episodes="${s.episode_count}" ${s.season_number === initialSeasonNumber ? "selected" : ""}>${esc(s.name)}</option>`).join("") || '<option value="1" data-episodes="1">Temporada 1</option>'}</select></label>
       </div><div class="episode-list" id="episodeList" aria-live="polite"></div></section>` : "";
@@ -477,24 +480,23 @@ async function detail(type, id){
       </div>
     </div>
   </section>
-  ${appPlayback && type === "tv" ? episodeBrowserHTML : ""}
+  ${overlayPlayback && type === "tv" ? episodeBrowserHTML : ""}
   <nav class="detail-tabs" role="tablist" aria-label="Secciones del título">
-    ${(appPlayback ? [["reparto","Reparto"],["similares","Similares"],["trailer","Tráiler"]] : [["ver","Ver"],["reparto","Reparto"],["detalles","Detalles"],["similares","Similares"],["trailer","Tráiler"]]).map(([key,label], i) => `<button class="detail-tab ${(!appPlayback && i === 0) || (tvApp && key === defaultTvTab) ? "active" : ""}" role="tab" aria-selected="${(!appPlayback && i === 0) || (tvApp && key === defaultTvTab)}" data-detail-tab="${key}">${label}</button>`).join("")}
+    ${(overlayPlayback ? [["reparto","Reparto"],["similares","Similares"],["trailer","Tráiler"]] : [["ver","Ver"],["reparto","Reparto"],["detalles","Detalles"],["similares","Similares"],["trailer","Tráiler"]]).map(([key,label], i) => { const active = overlayPlayback ? key === defaultOverlayTab : i === 0; return `<button class="detail-tab ${active ? "active" : ""}" role="tab" aria-selected="${active}" data-detail-tab="${key}">${label}</button>`; }).join("")}
   </nav>
-  ${appPlayback ? "" : `<section class="detail-panel" id="panel-ver" role="tabpanel">
+  ${overlayPlayback ? "" : `<section class="detail-panel" id="panel-ver" role="tabpanel">
     <h2 class="player-title">Ver ahora: ${esc(title)}</h2>
     <div class="player-frame" id="player-${d.id}"><iframe src="about:blank" title="Reproductor de video" tabindex="0" width="100%" height="100%" frameBorder="0" allowFullScreen allow="autoplay; fullscreen; picture-in-picture; encrypted-media; remote-playback" referrerPolicy="origin"></iframe></div>
     ${type === "tv" ? episodeBrowserHTML : ""}
   </section>`}
-  <section class="detail-panel" id="panel-reparto" role="tabpanel" ${tvApp && defaultTvTab === "reparto" ? "" : "hidden"}>${staticRow("Reparto", cast)}${tvApp && crewBits.length ? `<section class="block"><h2>${type === "movie" ? "Dirección y guion" : "Creación"}</h2><div class="crew">${crewBits.join("")}</div></section>` : ""}</section>
-  ${appPlayback ? "" : `<section class="detail-panel" id="panel-detalles" role="tabpanel" hidden>
+  <section class="detail-panel" id="panel-reparto" role="tabpanel" ${overlayPlayback && defaultOverlayTab === "reparto" ? "" : "hidden"}>${staticRow("Reparto", cast)}${tvApp && crewBits.length ? `<section class="block"><h2>${type === "movie" ? "Dirección y guion" : "Creación"}</h2><div class="crew">${crewBits.join("")}</div></section>` : ""}</section>
+  ${overlayPlayback ? "" : `<section class="detail-panel" id="panel-detalles" role="tabpanel" hidden>
     <section class="block"><h2>Información</h2><div class="info">${info}</div>${kws.length ? `<div style="margin-top:18px"><b class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:1px">Palabras clave</b><div class="kw">${kws.map(k => `<span>${esc(k.name)}</span>`).join("")}</div></div>` : ""}</section>
   </section>`}
-  <section class="detail-panel" id="panel-similares" role="tabpanel" ${tvApp && defaultTvTab === "similares" ? "" : "hidden"}>${staticRow("Recomendadas", recs)}${staticRow("Títulos similares", sim)}${tvApp && defaultTvTab === "similares" && !recs && !sim ? '<section class="block"><p class="muted">No hay títulos similares disponibles.</p></section>' : ""}</section>
+  <section class="detail-panel" id="panel-similares" role="tabpanel" ${overlayPlayback && defaultOverlayTab === "similares" ? "" : "hidden"}>${staticRow("Recomendadas", recs)}${staticRow("Títulos similares", sim)}${overlayPlayback && defaultOverlayTab === "similares" && !recs && !sim ? '<section class="block"><p class="muted">No hay títulos similares disponibles.</p></section>' : ""}</section>
   <section class="detail-panel" id="panel-trailer" role="tabpanel" hidden>${staticRow("Tráileres y videos", vids)}</section>`;
   $$("[data-detail-tab]").forEach(tab => tab.onclick = () => activateDetailTab(tab.dataset.detailTab));
   const playerFrame = $(`#player-${d.id} iframe`);
-  playerFrame?.addEventListener("load", () => { if (isTvMode) focusPlayerFrame(playerFrame); });
   requestAnimationFrame(() => { if (isTvMode) $("[data-act='play-detail']")?.focus(); });
   if (type === "tv"){
     const seasonSel = $("#playSeason");
@@ -538,47 +540,98 @@ function filterEpisodeCards(query){
   } else if (empty && cards.length) empty.hidden = true;
 }
 function startDetailPlayback(id, type, season = 1, episode = 1){
+  lastPlaybackTrigger = document.activeElement;
+  const overlayPlayback = isNativeApp() || isTvMode;
   const path = type === "tv" ? `f/embed/tv/${id}/${season}/${episode}` : `f/embed/movie/${id}`;
   const playerURL = new URL(unlimplayUrl(path), location.href);
   if (isTvMode) playerURL.searchParams.set("cn_tv", "1");
   const src = playerURL.href;
-  if (isNativeApp()){
+  if (overlayPlayback){
     $(".app-player-overlay")?.remove();
     const player = document.createElement("div"); player.className = "player-frame player-fullscreen app-player-overlay"; player.id = `player-${id}`;
     const frame = document.createElement("iframe");
     frame.title = "Reproductor de video"; frame.tabIndex = 0; frame.width = "100%"; frame.height = "100%"; frame.setAttribute("frameborder", "0"); frame.allowFullscreen = true;
     frame.allow = "autoplay; fullscreen; picture-in-picture; encrypted-media; remote-playback"; frame.referrerPolicy = "origin";
-    frame.addEventListener("load", () => focusPlayerFrame(frame), {once:true}); player.append(frame); document.body.append(player);
-    window.CinenovaTvRemote?.setPlayerFullscreen(true); frame.src = src; requestAnimationFrame(() => focusPlayerFrame(frame)); return;
+    const loader = createPlayerLoader();
+    frame.addEventListener("load", () => { schedulePlayerLoaderRemoval(loader); focusPlayerFrame(frame, true); }, {once:true});
+    frame.src = src; player.append(loader, frame, createPlayerExitButton()); document.body.append(player);
+    window.CinenovaTvRemote?.setPlayerFullscreen(true); requestAnimationFrame(() => $(".player-exit", player)?.focus({preventScroll:true})); return;
   }
   const player = document.getElementById(`player-${id}`), frame = player?.querySelector("iframe");
   if (!player || !frame) return;
   if (frame.dataset.loadedSrc !== src){
     frame.dataset.loadedSrc = src;
-    if (isTvMode) frame.addEventListener("load", () => focusPlayerFrame(frame), {once:true});
+    if (overlayPlayback){
+      const loader = createPlayerLoader(); player.append(loader);
+      frame.addEventListener("load", () => { schedulePlayerLoaderRemoval(loader); focusPlayerFrame(frame, true); }, {once:true});
+    }
     frame.src = src;
   }
   player.scrollIntoView({behavior:"smooth", block:"start"});
   if (isTvMode){
     player.classList.add("player-fullscreen");
+    if (!$(".player-exit", player)) player.append(createPlayerExitButton());
+    showPlayerExitButton();
     window.CinenovaTvRemote?.setPlayerFullscreen(true);
-    if (isTvMode) requestAnimationFrame(() => frame.focus({preventScroll:true}));
+    requestAnimationFrame(() => $(".player-exit", player)?.focus({preventScroll:true}));
   }
+}
+function createPlayerLoader(){
+  const loader = document.createElement("div");
+  loader.className = "player-loader"; loader.setAttribute("aria-live", "polite");
+  loader.innerHTML = '<div class="spinner"></div><span>Cargando reproductor…</span>';
+  loader._fallbackTimer = setTimeout(() => removePlayerLoader(loader), 12000);
+  return loader;
+}
+function schedulePlayerLoaderRemoval(loader){
+  clearTimeout(loader._fallbackTimer);
+  loader._hideTimer = setTimeout(() => removePlayerLoader(loader), 600);
+}
+function removePlayerLoader(loader){
+  clearTimeout(loader._fallbackTimer); clearTimeout(loader._hideTimer); loader.remove();
+}
+function createPlayerExitButton(){
+  const button = document.createElement("button");
+  button.type = "button"; button.className = "player-exit"; button.textContent = "← Salir";
+  button.setAttribute("aria-label", "Salir del reproductor");
+  button.addEventListener("click", exitPlayerFullscreen);
+  return button;
+}
+function showPlayerExitButton(){
+  const button = $(".player-frame.player-fullscreen .player-exit");
+  if (!button) return;
+  button.classList.add("visible"); clearTimeout(playerExitTimer);
+  if (isTvMode) return;
+  playerExitTimer = setTimeout(() => { if (!button.matches(":focus")) button.classList.remove("visible"); }, 3500);
 }
 window.cinenovaExitPlayerFullscreen = () => {
   const frame = $(".player-frame.player-fullscreen iframe");
   $$(".player-frame.player-fullscreen").forEach(player => player.classList.remove("player-fullscreen"));
-  $$(".app-player-overlay").forEach(player => player.remove());
+  $$(".app-player-overlay").forEach(player => { const loader=$(".player-loader",player); if(loader) removePlayerLoader(loader); player.remove(); });
   frame?.blur();
   window.CinenovaTvRemote?.setPlayerFullscreen(false);
-  if (isTvMode) requestAnimationFrame(() => $("[data-act='play-detail']")?.focus({preventScroll:true}) || $(".episode-card")?.focus({preventScroll:true}));
+  if (isTvMode) requestAnimationFrame(() => {
+    const target = lastPlaybackTrigger?.isConnected ? lastPlaybackTrigger : $("[data-act='play-detail']") || $(".episode-card");
+    target?.focus({preventScroll:true}); target?.scrollIntoView?.({block:"nearest",inline:"nearest"});
+    lastPlaybackTrigger = null;
+  });
 };
+window.addEventListener("message", event => {
+  const type = event.data?.type;
+  if (type === "cinenova-exit-player") exitPlayerFullscreen();
+  else if (type === "cinenova-player-activity") showPlayerExitButton();
+  else if (type === "cinenova-player-exit-focus") {
+    showPlayerExitButton(); $(".player-frame.player-fullscreen .player-exit")?.focus({preventScroll:true});
+  }
+});
 
-function focusPlayerFrame(frame){
+function focusPlayerFrame(frame, autoplay = false){
   try{
     frame.focus({preventScroll:true}); const win = frame.contentWindow;
     let doc; try { doc = frame.contentDocument; } catch(e) { doc = null; }
-    if (!doc){ win?.postMessage({type:"cinenova-player-focus"}, "*"); return; }
+    win?.postMessage({type:autoplay ? "cinenova-player-autoplay" : "cinenova-player-focus"}, "*");
+    if (!doc) return;
+    installSameOriginPlayerBridge(doc, win);
     win?.focus();
     if (doc){ const active = doc.activeElement; if (!active || active === doc.body || active === doc.documentElement){
       const play = doc.querySelector("#pbtn, .pbtn, video, button, [tabindex='0']");
@@ -587,10 +640,67 @@ function focusPlayerFrame(frame){
     }}
   }catch(e){}
 }
+function installSameOriginPlayerBridge(doc, win){
+  if (!doc?.documentElement || doc.documentElement.dataset.cinenovaPlayerBridge) return;
+  doc.documentElement.dataset.cinenovaPlayerBridge = "1";
+  const send = type => { try { win.parent.postMessage({type}, "*"); } catch(e){} };
+  const view = doc.defaultView || win;
+  const arrows = ["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"];
+  view.addEventListener("keyup", e => { if (arrows.includes(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+  view.addEventListener("keypress", e => { if (arrows.includes(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+  view.addEventListener("keydown", e => {
+    if (["Escape","Backspace","BrowserBack"].includes(e.key)){
+      e.preventDefault(); e.stopImmediatePropagation(); send("cinenova-exit-player"); return;
+    }
+    send("cinenova-player-activity");
+    const video = doc.querySelector("video");
+    if (["Enter"," ","MediaPlayPause"].includes(e.key)){
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (video){ if (video.paused) video.play?.().catch?.(() => {}); else video.pause(); }
+      else { const target=doc.activeElement; if (target && target!==doc.body) target.click?.(); }
+    } else if (arrows.includes(e.key)) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      const active=doc.activeElement||doc.body, seek=active.matches?.('input[type="range"],[role="slider"],.vjs-progress-control,.plyr__progress,.jw-slider-time,[class*="progress" i],[class*="seek" i]');
+      if (seek && video && (e.key === "ArrowLeft" || e.key === "ArrowRight")) video.currentTime=Math.max(0,video.currentTime+(e.key === "ArrowLeft"?-10:10));
+      else {
+        const controls=[...doc.querySelectorAll('button:not(:disabled),a[href],select:not(:disabled),input:not(:disabled):not([type="hidden"]),[role="button"],[role="menuitem"],[role="option"],[tabindex]')].filter(el=>el.getClientRects().length&&getComputedStyle(el).visibility!=="hidden"&&getComputedStyle(el).display!=="none");
+        const focused=active.closest?.('button,a[href],select,input,[role="button"],[role="menuitem"],[role="option"],[tabindex]');
+        const rect=focused?.getBoundingClientRect();
+        if (!controls.includes(focused)) controls[0]?.focus({preventScroll:true});
+        else if ((e.key === "ArrowUp" && rect?.top < innerHeight*.25)) send("cinenova-player-exit-focus");
+        else { const dx=e.key==="ArrowLeft"?-1:e.key==="ArrowRight"?1:0,dy=e.key==="ArrowUp"?-1:e.key==="ArrowDown"?1:0,cx=rect.left+rect.width/2,cy=rect.top+rect.height/2; const next=controls.filter(el=>el!==focused).map(el=>{const r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,p=dx?(x-cx)*dx:(y-cy)*dy,c=dx?Math.abs(y-cy):Math.abs(x-cx);return{el,score:p+c*1.5,p};}).filter(x=>x.p>4).sort((a,b)=>a.score-b.score)[0]; next?.el.focus({preventScroll:true}); next?.el.scrollIntoView?.({block:"nearest",inline:"nearest"}); }
+      }
+    }
+  }, true);
+  win.addEventListener("message", e => {
+    if (e.source !== win.parent || !["cinenova-player-focus","cinenova-player-autoplay"].includes(e.data?.type)) return;
+    const play=doc.querySelector('#pbtn,.pbtn,.play-overlay,[class*="play-overlay" i],[aria-label*="play" i],[title*="play" i],video');
+    if (play && play.tagName !== "VIDEO"){ play.focus?.({preventScroll:true}); if(e.data.type === "cinenova-player-autoplay") play.click?.(); }
+    else if (play?.tagName === "VIDEO"){ if(e.data.type === "cinenova-player-autoplay") play.play?.().catch?.(() => {}); doc.body.tabIndex=-1; doc.body.focus({preventScroll:true}); }
+  });
+  const installFrame = child => {
+    const attach=()=>{ try{ installSameOriginPlayerBridge(child.contentDocument,child.contentWindow); }catch(e){} };
+    child.addEventListener("load",attach); attach();
+  };
+  doc.querySelectorAll("iframe").forEach(installFrame);
+  new MutationObserver(()=>doc.querySelectorAll("iframe").forEach(child=>{
+    if(child.dataset.cinenovaObserved)return; child.dataset.cinenovaObserved="1"; installFrame(child);
+  })).observe(doc.documentElement,{childList:true,subtree:true});
+}
 window.cinenovaForwardPlayerKey = key => {
+  if (document.activeElement?.matches(".player-exit") && ["Enter"," "].includes(key)){
+    $(".player-frame.player-fullscreen .player-exit")?.click(); return true;
+  }
+  if (isNativeApp() && isTvMode && $(".player-frame.player-fullscreen") && !document.activeElement?.matches(".player-exit")){
+    const tap = window.CinenovaTvRemote?.sendPlayerTap;
+    if (["Enter"," ","MediaPlayPause"].includes(key)){ tap?.(0.5,0.5); return true; }
+  }
   const frame = $(".app-player-overlay iframe, .player-frame.player-fullscreen iframe");
   try{
     const win = frame?.contentWindow; if (!win) return false;
+    if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(key)){
+      win.postMessage({type:"cinenova-player-key", key}, "*"); return true;
+    }
     let doc; try { doc = frame.contentDocument; } catch(e) { doc = null; }
     if (!doc){ win.postMessage({type:"cinenova-player-key", key}, "*"); return true; }
     const target = doc.activeElement || doc.body;
@@ -720,23 +830,65 @@ function handleAppBack(){
 }
 window.onAndroidBackPressed = handleAppBack;
 document.addEventListener("fullscreenchange", () => {
-  if (!document.fullscreenElement) window.cinenovaExitPlayerFullscreen?.();
+  const frame = $(".player-frame.player-fullscreen iframe");
+  if (isTvMode && document.fullscreenElement && frame?.contains(document.fullscreenElement)){
+    suppressPlayerNativeFullscreenExit = true;
+    if (document.exitFullscreen) document.exitFullscreen().catch(() => { suppressPlayerNativeFullscreenExit = false; });
+    else suppressPlayerNativeFullscreenExit = false;
+    return;
+  }
+  if (!document.fullscreenElement){
+    if (suppressPlayerNativeFullscreenExit){ suppressPlayerNativeFullscreenExit = false; return; }
+    window.cinenovaExitPlayerFullscreen?.();
+  }
 });
 $("#mclose").onclick = closeModal;
 $("#modal").onclick = e => { if (e.target.id === "modal") closeModal(); };
 document.addEventListener("keydown", e => {
   const editing = e.target.matches("input,textarea,select,[contenteditable='true']");
   if (["Escape","Backspace"].includes(e.key) && !editing){ if (handleAppBack()){ e.preventDefault(); e.stopImmediatePropagation(); } }
-  if ($(".player-frame.player-fullscreen") && isTvMode && !editing) return;
+  const modal = $("#modal");
+  if (!modal.classList.contains("hidden") && e.key.startsWith("Arrow")){
+    e.preventDefault(); e.stopPropagation();
+    const items = $$("#modal button:not(:disabled),#modal a[href],#modal [tabindex='0'],#modal input:not(:disabled),#modal select:not(:disabled)")
+      .filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== "hidden");
+    const current = document.activeElement, rect = current.getBoundingClientRect();
+    const [dx,dy] = ({ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]})[e.key];
+    const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
+    const candidate = items.filter(el => el !== current).map(el => {
+      const r = el.getBoundingClientRect(), x = r.left+r.width/2, y = r.top+r.height/2;
+      const primary = dx ? (x-cx)*dx : (y-cy)*dy, cross = dx ? Math.abs(y-cy) : Math.abs(x-cx);
+      return {el,score:primary+cross*1.5};
+    }).filter(v => v.score > 4).sort((a,b)=>a.score-b.score)[0];
+    (candidate?.el || items[0] || $("#mclose"))?.focus({preventScroll:true}); return;
+  }
   if (isTvMode && e.target.matches("#searchQuery") && e.key === "Enter" && e.target.readOnly){
     e.preventDefault(); e.target.readOnly = false; e.target.blur(); e.target.focus(); e.target.select(); return;
+  }
+  if (isTvMode && e.target.matches("#searchQuery") && e.target.readOnly && e.key === "ArrowLeft"){
+    e.preventDefault(); $("#tvSidebar [data-r='buscar']")?.focus({preventScroll:true}); return;
   }
   if (isTvMode && e.target.matches("#searchQuery") && e.key === "ArrowDown"){
     const first = $("#grid .card"); if (first){ e.preventDefault(); first.focus({preventScroll:true}); first.scrollIntoView({block:"center",inline:"nearest",behavior:"smooth"}); return; }
   }
+  if (isTvMode && e.target.matches("#playSeason") && e.key === "ArrowRight"){
+    const episode = $(".episode-card"); if (episode){ e.preventDefault(); episode.focus({preventScroll:true}); episode.scrollIntoView({block:"nearest",inline:"nearest"}); return; }
+  }
   if (e.key === "Enter" && e.target.matches('[role="button"][tabindex="0"]') && !e.target.matches("button,a")){ e.preventDefault(); e.target.click(); return; }
   if (!isTvMode || editing || !e.key.startsWith("Arrow")) return;
   const current = document.activeElement;
+  const playerOverlay = $(".player-frame.player-fullscreen");
+  if (playerOverlay){
+    if (e.key.startsWith("Arrow")) showPlayerExitButton();
+    if (e.key === "ArrowUp" && current === $(".player-exit", playerOverlay)) return;
+    if (e.key === "ArrowDown" && current === $(".player-exit", playerOverlay)) {
+      e.preventDefault();
+      const frame=$("iframe",playerOverlay); frame?.focus({preventScroll:true});
+      frame?.contentWindow?.postMessage({type:"cinenova-player-focus"}, "*");
+      return;
+    }
+    return;
+  }
   const sideMenu = current.closest("#tvSidebar");
   if (sideMenu){
     if (e.key === "ArrowUp" || e.key === "ArrowDown"){
@@ -753,8 +905,38 @@ document.addEventListener("keydown", e => {
     }
     return;
   }
-  const player = $(".player-frame.player-fullscreen");
-  if (player) return;
+  const tabs = $(".detail-tabs");
+  if (tabs && current.closest(".detail-tabs")){
+    const items = $$(".detail-tab", tabs), index = items.indexOf(current);
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight"){
+      e.preventDefault(); const next = items[index + (e.key === "ArrowLeft" ? -1 : 1)];
+      if (next){ next.focus({preventScroll:true}); next.scrollIntoView({block:"nearest",inline:"nearest",behavior:"smooth"}); }
+      else if (e.key === "ArrowLeft") $("#tvSidebar [data-r].active")?.focus({preventScroll:true});
+      return;
+    }
+    if (e.key === "ArrowDown"){
+      const activePanel = $(".detail-panel:not([hidden])");
+      const first = activePanel?.querySelector("button:not(:disabled),a[href],select:not(:disabled),input:not(:disabled),[tabindex='0']");
+      if (first){ e.preventDefault(); first.focus({preventScroll:true}); first.scrollIntoView({block:"nearest",inline:"nearest"}); }
+      return;
+    }
+  }
+  if (current.matches(".detail-tab") && e.key === "ArrowUp"){
+    e.preventDefault(); $("[data-act='play-detail']")?.focus({preventScroll:true}); return;
+  }
+  const actionGroup = current.closest(".dinfo .actions");
+  if (actionGroup && (e.key === "ArrowLeft" || e.key === "ArrowRight")){
+    const items = $$('button:not(:disabled)', actionGroup), index = items.indexOf(current);
+    const next = items[index + (e.key === "ArrowLeft" ? -1 : 1)];
+    if (index >= 0){ e.preventDefault(); if (next) next.focus({preventScroll:true}); else if (e.key === "ArrowLeft") $("#tvSidebar [data-r].active")?.focus({preventScroll:true}); return; }
+  }
+  if (current.matches(".episode-card") && e.key === "ArrowUp"){
+    e.preventDefault(); $("#playSeason")?.focus({preventScroll:true}) || $("[data-act='play-detail']")?.focus({preventScroll:true}); return;
+  }
+  if (current.closest(".detail-panel") && e.key === "ArrowLeft"){
+    const rect = current.getBoundingClientRect();
+    if (rect.left <= 20){ e.preventDefault(); $("#tvSidebar [data-r].active")?.focus({preventScroll:true}); return; }
+  }
   const heroControl = current.closest(".hero-carousel-controls") && current.closest(".hero-arrow, .hero-thumb");
   if (heroControl){
     if (e.key === "ArrowLeft" || e.key === "ArrowRight"){
@@ -793,6 +975,7 @@ document.addEventListener("keydown", e => {
       const delta = e.key === "ArrowUp" ? -columns : e.key === "ArrowDown" ? columns : e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
       if (delta){ e.preventDefault(); const next = cards[index + delta];
         if (next){ next.focus({preventScroll:true}); next.scrollIntoView({block:"nearest",inline:"nearest",behavior:"smooth"}); }
+        else if (e.key === "ArrowLeft" && index % columns === 0) $("#tvSidebar [data-r].active")?.focus({preventScroll:true});
         else if (e.key === "ArrowUp" && index < columns){
           const top = $("#searchQuery") || $(".tabs .chip.on") || $(".page h1");
           if (top){ if (top.tagName === "H1") top.setAttribute("tabindex","-1"); top.focus({preventScroll:true}); }
@@ -834,7 +1017,7 @@ document.addEventListener("keydown", e => {
   }
   const directions = {ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]};
   const [dx,dy] = directions[e.key];
-  const focusables = $$('a[href],button:not(:disabled),select:not(:disabled),input:not(:disabled),[tabindex="0"]')
+  const focusables = $$('a[href],button:not(:disabled):not(.arr),select:not(:disabled),input:not(:disabled),[tabindex="0"]:not(.arr)')
     .filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== "hidden");
   if (!focusables.includes(current)){ focusables[0]?.focus(); return; }
   const from = current.getBoundingClientRect(), fx = from.left + from.width/2, fy = from.top + from.height/2;
@@ -889,7 +1072,8 @@ document.addEventListener("click", e => {
 $("#yr").textContent = new Date().getFullYear();
 window.addEventListener("hashchange", router);
 (async () => {
-  try{ const cfg = await fetch("./app-config.json", {headers:{accept:"application/json"}}); if (cfg.ok){ const data = await cfg.json(); if (typeof data.apiBaseUrl === "string" && data.apiBaseUrl.trim()) API_BASE_URL = data.apiBaseUrl.trim().replace(/\/$/, ""); } }catch(e){}
+  const localBrowser = (location.hostname === "127.0.0.1" || location.hostname === "localhost") && !isNativeApp();
+  if (!localBrowser){ try{ const cfg = await fetch("./app-config.json", {headers:{accept:"application/json"}}); if (cfg.ok){ const data = await cfg.json(); if (typeof data.apiBaseUrl === "string" && data.apiBaseUrl.trim()) API_BASE_URL = data.apiBaseUrl.trim().replace(/\/$/, ""); } }catch(e){} }
   try{ await loadGenres(); }catch(e){}
   router();
 })();

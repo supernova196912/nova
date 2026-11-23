@@ -103,20 +103,43 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
     const visibleControls = () => [...doc.querySelectorAll(controlSelector)]
       .filter(el => !el.matches("iframe,video") && el.getClientRects().length && el.getBoundingClientRect().width > 12 && el.getBoundingClientRect().height > 12 && (()=>{const s=doc.defaultView.getComputedStyle(el);return s.visibility !== "hidden" && s.display !== "none" && !el.hidden && el.getAttribute("aria-hidden") !== "true";})());
     const progressSelector = 'input[type="range"],[role="slider"],.vjs-progress-control,.plyr__progress,.jw-slider-time,[class*="progress" i],[id*="progress" i],[class*="seek" i],[id*="seek" i],[class*="timeline" i],[id*="timeline" i],[class*="scrubber" i],[id*="scrubber" i]';
-    const isProgressBar = element => {
-      const candidate = element?.closest?.(progressSelector);
-      if (candidate) return true;
-      const rect = element?.getBoundingClientRect?.();
-      return !!rect && rect.width > view.innerWidth * .45 && rect.top > view.innerHeight * .5;
+    const isSeekbar = element => {
+      if (!element) return false;
+      const candidate = element.closest?.(progressSelector), childRange = element.querySelector?.('input[type="range"],[role="slider"]');
+      if (candidate || childRange) return true;
+      const rect = element.getBoundingClientRect?.(), marker = `${element.className?.baseVal || element.className || ""} ${element.id || ""}`;
+      return !!rect && rect.width > rect.height && rect.top > view.innerHeight * .5 && /progress|seek|timeline|scrubber|bar/i.test(marker);
     };
     const seekProgress = (element, key) => {
       const video = doc.querySelector("video");
-      if (video) video.currentTime = Math.max(0, Math.min(video.duration || 1e9, video.currentTime + (key === "ArrowLeft" ? -10 : 10)));
-      if (element?.matches?.('input[type="range"]') && video) {
-        const min = Number(element.min || 0), max = Number(element.max || video.duration || 1e9), duration = video.duration || max;
-        element.value = String(min + (Math.max(0, Math.min(duration, video.currentTime)) / duration) * (max - min));
-        element.dispatchEvent(new view.Event("input", {bubbles:true}));
-        element.dispatchEvent(new view.Event("change", {bubbles:true}));
+      if (!video) return;
+      const duration = video.duration || 1e9, delta = key === "ArrowLeft" ? -10 : 10;
+      video.currentTime = Math.max(0, Math.min(duration, video.currentTime + delta));
+      const bar = element.closest?.(progressSelector) || element;
+      const range = element.matches?.('input[type="range"]') ? element : element.querySelector?.('input[type="range"]') || bar.querySelector?.('input[type="range"]');
+      if (range) {
+        const min = Number(range.min || 0), max = Number(range.max || duration);
+        range.value = String(min + (Math.max(0, Math.min(duration, video.currentTime)) / duration) * (max - min));
+        range.dispatchEvent(new view.Event("input", {bubbles:true}));
+        range.dispatchEvent(new view.Event("change", {bubbles:true}));
+      }
+      const rect = bar.getBoundingClientRect(), x = rect.left + (video.currentTime / duration) * rect.width, y = rect.top + rect.height / 2;
+      const target = range || bar, init = {bubbles:true,cancelable:true,clientX:x,clientY:y};
+      if (view.PointerEvent) { target.dispatchEvent(new view.PointerEvent("pointerdown",init)); target.dispatchEvent(new view.PointerEvent("pointerup",init)); }
+      ["mousedown","mouseup","click"].forEach(type => target.dispatchEvent(new view.MouseEvent(type,init)));
+    };
+    const volumeSelector = '[aria-label*="mute" i],[aria-label*="volumen" i],[aria-label*="volume" i],[title*="mute" i],[title*="volumen" i],[class*="volume" i],[class*="mute" i]';
+    const isVolumeControl = element => !!element?.closest?.(volumeSelector);
+    const adjustVolume = (element, key) => {
+      const video = doc.querySelector("video"); if (!video) return;
+      video.volume = Math.max(0, Math.min(1, video.volume + (key === "ArrowUp" ? .1 : -.1)));
+      if (video.volume > 0) video.muted = false;
+      const container = element.closest?.(volumeSelector)?.parentElement || element.parentElement;
+      const range = container?.querySelector?.('input[type="range"]');
+      if (range) {
+        range.value = String(Math.round(video.volume * 100));
+        range.hidden = false; range.style.setProperty("visibility","visible","important"); range.style.setProperty("opacity","1","important");
+        range.dispatchEvent(new view.Event("input",{bubbles:true})); range.dispatchEvent(new view.Event("change",{bubbles:true}));
       }
     };
     const promoteVisibleControls = () => visibleControls().forEach(el => { if (el.tabIndex !== 0) el.tabIndex = 0; });
@@ -160,6 +183,11 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       } else if (video) {
         if (video.paused) video.play?.().catch?.(() => {}); else video.pause();
       }
+    };
+    const toggleVideoPlayback = () => {
+      const video = doc.querySelector("video"); if (!video) return false;
+      if (video.paused) video.play?.().catch?.(() => {}); else video.pause();
+      return true;
     };
     let hudTimer = 0, skipNextForwardedKey = null;
     const hudSelector = 'header,nav,button,a,select,[role="button"],[role="menuitem"],[role="option"],[onclick],[tabindex],li,.item,[class*="control" i],[class*="menu" i],[class*="server" i],[class*="language" i],[class*="episode" i],[class*="toolbar" i]';
@@ -205,11 +233,14 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       const hudWasHidden = doc.documentElement.classList.contains("cn-hud-hidden");
       wakePlayerHud();
       send("cinenova-player-activity");
+      if (event.key === " " || event.key === "Space" || event.code === "Space") { event.preventDefault(); event.stopImmediatePropagation(); if (!toggleVideoPlayback()) activatePlayerControl(); return; }
       if (hudWasHidden) { event.preventDefault(); event.stopImmediatePropagation(); visibleControls()[0]?.focus({preventScroll:true}); return; }
-      if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && isProgressBar(doc.activeElement)) { event.preventDefault(); event.stopImmediatePropagation(); seekProgress(doc.activeElement, event.key); return; }
+      if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && isSeekbar(doc.activeElement)) { event.preventDefault(); event.stopImmediatePropagation(); seekProgress(doc.activeElement, event.key); return; }
+      if ((event.key === "ArrowUp" || event.key === "ArrowDown") && isVolumeControl(doc.activeElement)) { event.preventDefault(); event.stopImmediatePropagation(); adjustVolume(doc.activeElement,event.key); return; }
       if (arrows.includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); movePlayerFocus(event.key); return; }
       if (["Escape", "Backspace", "BrowserBack"].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-exit-player"); return; }
-      if (["Enter", " ", "MediaPlayPause"].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); activatePlayerControl(); }
+      if (event.key === "Enter") { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); activatePlayerControl(); }
+      else if (event.key === "MediaPlayPause") { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); toggleVideoPlayback(); }
     }, true);
     ["pointermove","mousemove"].forEach(type => view.addEventListener(type, event => {
       if (!event.isTrusted) return;
@@ -240,7 +271,7 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
         wakePlayerHud();
         if (hudWasHidden) {
           visibleControls()[0]?.focus({preventScroll:true});
-          if (typeof event.data.key === "string") skipNextForwardedKey = event.data.key;
+          if (typeof event.data.key === "string" && event.data.key !== " " && event.data.key !== "Space") skipNextForwardedKey = event.data.key;
         }
         return;
       }
@@ -255,9 +286,11 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       if (skipNextForwardedKey === key) { skipNextForwardedKey = null; return; }
       const hudWasHidden = doc.documentElement.classList.contains("cn-hud-hidden");
       wakePlayerHud();
+      if (key === " " || key === "Space") { if (!toggleVideoPlayback()) activatePlayerControl(); return; }
       if (hudWasHidden) { visibleControls()[0]?.focus({preventScroll:true}); return; }
       if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Enter"," ","MediaPlayPause"].includes(key)) return;
-      if ((key === "ArrowLeft" || key === "ArrowRight") && isProgressBar(doc.activeElement)) { seekProgress(doc.activeElement, key); return; }
+      if ((key === "ArrowLeft" || key === "ArrowRight") && isSeekbar(doc.activeElement)) { seekProgress(doc.activeElement, key); return; }
+      if ((key === "ArrowUp" || key === "ArrowDown") && isVolumeControl(doc.activeElement)) { adjustVolume(doc.activeElement,key); return; }
       if (arrows.includes(key)) { movePlayerFocus(key); return; }
       activatePlayerControl();
     });

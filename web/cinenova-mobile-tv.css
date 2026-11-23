@@ -143,12 +143,21 @@ body.native-app .download-app-btn { display: none; }
   position: sticky;
   top: 64px;
   z-index: 40;
-  gap: 6px;
+  display: flex;
+  gap: 12px;
+  padding: 14px 3%;
+  border-left: none;
+  border-right: none;
+  border-bottom: 1px solid rgba(255,255,255,.08);
   background: rgba(8, 13, 24, .96);
   backdrop-filter: blur(14px);
 }
-.detail-tab { min-height: 50px; padding: 12px 18px; }
-.detail-tab.active { color: #8eb1ff; border-color: #4c82ff; }
+.detail-tab { min-height: 50px; padding: 10px 20px; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; background: rgba(255,255,255,.04); color: var(--muted); transition: all .18s ease; }
+.detail-tab.active { background: rgba(76,130,255,.18); border-color: #4c82ff; color: #fff; }
+.dinfo .actions { display:flex; flex-wrap:wrap; gap:16px; margin:18px 0 26px; }
+.dinfo .actions .btn { border-radius:12px; padding:12px 24px; font-weight:700; letter-spacing:.2px; }
+.dinfo .actions .btn.primary { box-shadow:0 8px 24px rgba(43,104,239,.28); }
+.dinfo .actions .btn.ghost { border:1px solid rgba(210,226,255,.2); }
 .detail-panel { padding-top: 26px; padding-bottom: 32px; }
 .player-title { font-size: clamp(20px, 2.2vw, 28px); margin-bottom: 18px; }
 .player-frame {
@@ -354,6 +363,8 @@ body.tv-mode .dhero .dinfo .overview { display:-webkit-box; -webkit-box-orient:v
 body.tv-mode .dhero .dinfo .crew { display:flex; flex-wrap:nowrap; gap:18px; overflow:hidden; white-space:nowrap; margin-top:10px; font-size:.82rem; }
 body.tv-mode .dhero .dinfo .actions { gap:10px; margin-top:12px; }
 body.tv-mode .dhero .dinfo .actions .btn { padding:11px 22px; font-size:.96rem; }
+body.tv-mode .dhero .dinfo .actions, body.native-app .dhero .dinfo .actions { gap:16px; margin:18px 0 26px; }
+body.tv-mode .dhero .dinfo .actions .btn, body.native-app .dhero .dinfo .actions .btn { border-radius:12px; padding:12px 24px; font-weight:700; letter-spacing:.2px; }
 body.tv-mode .card.person { flex-basis:122px; width:122px; text-align:center; }
 body.tv-mode .card.person .ctitle, body.tv-mode .card.person .cmeta { white-space:normal; }
 body:not(.tv-mode) .card.person { flex-basis:112px; width:112px; text-align:center; }
@@ -379,6 +390,7 @@ body.tv-mode #searchQuery:focus-visible {
   outline-offset: 4px;
   box-shadow: 0 0 20px rgba(76,130,255,.48);
 }
+body.tv-mode .detail-tab:focus-visible { outline:3px solid #74a0ff; outline-offset:2px; background:rgba(76,130,255,.26); color:#fff; }
 
 @media (max-width: 767px) {
   .episode-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }

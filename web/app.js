@@ -713,6 +713,7 @@ function handleFullscreenPlayerKey(key, player, event){
   const frame = $("iframe", player), exitButton = $(".player-exit", player);
   const onExit = document.activeElement === exitButton;
   event?.preventDefault(); event?.stopImmediatePropagation();
+  if (key === " "){ frame?.contentWindow?.postMessage({type:"cinenova-player-key",key:" "}, "*"); return true; }
   if (onExit){
     if (key === "Enter"){ exitButton?.click(); return true; }
     if (key === "ArrowDown" || key === "ArrowLeft"){
@@ -889,6 +890,16 @@ function focusTvSidebar(){
   target?.focus({preventScroll:true});
   return Boolean(target);
 }
+const suppressFullscreenSpace = e => {
+  const player = $(".player-frame.player-fullscreen");
+  if (!player || !(e.key === " " || e.code === "Space")) return;
+  if (e.type === "keydown") showPlayerHud();
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (e.type === "keydown") $("iframe", player)?.contentWindow?.postMessage({type:"cinenova-player-key",key:" "}, "*");
+};
+window.addEventListener("keydown", suppressFullscreenSpace, true);
+window.addEventListener("keyup", suppressFullscreenSpace, true);
 window.addEventListener("keydown", e => {
   if ($(".player-frame.player-fullscreen")) {
     const keyForEmbed = !document.activeElement?.matches(".player-exit")

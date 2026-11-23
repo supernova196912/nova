@@ -102,6 +102,23 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
     const menuSelector = '[role="menu"],[role="listbox"],.dropdown-menu,[class*="language-menu" i],[class*="server-menu" i]';
     const visibleControls = () => [...doc.querySelectorAll(controlSelector)]
       .filter(el => !el.matches("iframe,video") && el.getClientRects().length && el.getBoundingClientRect().width > 12 && el.getBoundingClientRect().height > 12 && (()=>{const s=doc.defaultView.getComputedStyle(el);return s.visibility !== "hidden" && s.display !== "none" && !el.hidden && el.getAttribute("aria-hidden") !== "true";})());
+    const progressSelector = 'input[type="range"],[role="slider"],.vjs-progress-control,.plyr__progress,.jw-slider-time,[class*="progress" i],[id*="progress" i],[class*="seek" i],[id*="seek" i],[class*="timeline" i],[id*="timeline" i],[class*="scrubber" i],[id*="scrubber" i]';
+    const isProgressBar = element => {
+      const candidate = element?.closest?.(progressSelector);
+      if (candidate) return true;
+      const rect = element?.getBoundingClientRect?.();
+      return !!rect && rect.width > view.innerWidth * .45 && rect.top > view.innerHeight * .5;
+    };
+    const seekProgress = (element, key) => {
+      const video = doc.querySelector("video");
+      if (video) video.currentTime = Math.max(0, Math.min(video.duration || 1e9, video.currentTime + (key === "ArrowLeft" ? -10 : 10)));
+      if (element?.matches?.('input[type="range"]') && video) {
+        const min = Number(element.min || 0), max = Number(element.max || video.duration || 1e9), duration = video.duration || max;
+        element.value = String(min + (Math.max(0, Math.min(duration, video.currentTime)) / duration) * (max - min));
+        element.dispatchEvent(new view.Event("input", {bubbles:true}));
+        element.dispatchEvent(new view.Event("change", {bubbles:true}));
+      }
+    };
     const promoteVisibleControls = () => visibleControls().forEach(el => { if (el.tabIndex !== 0) el.tabIndex = 0; });
     promoteVisibleControls();
     new MutationObserver(promoteVisibleControls).observe(doc.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["class","style","hidden","aria-hidden"]});
@@ -189,6 +206,7 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       wakePlayerHud();
       send("cinenova-player-activity");
       if (hudWasHidden) { event.preventDefault(); event.stopImmediatePropagation(); visibleControls()[0]?.focus({preventScroll:true}); return; }
+      if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && isProgressBar(doc.activeElement)) { event.preventDefault(); event.stopImmediatePropagation(); seekProgress(doc.activeElement, event.key); return; }
       if (arrows.includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); movePlayerFocus(event.key); return; }
       if (["Escape", "Backspace", "BrowserBack"].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-exit-player"); return; }
       if (["Enter", " ", "MediaPlayPause"].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); activatePlayerControl(); }
@@ -239,6 +257,7 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       wakePlayerHud();
       if (hudWasHidden) { visibleControls()[0]?.focus({preventScroll:true}); return; }
       if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Enter"," ","MediaPlayPause"].includes(key)) return;
+      if ((key === "ArrowLeft" || key === "ArrowRight") && isProgressBar(doc.activeElement)) { seekProgress(doc.activeElement, key); return; }
       if (arrows.includes(key)) { movePlayerFocus(key); return; }
       activatePlayerControl();
     });

@@ -249,7 +249,6 @@ function renderHero(items){
         <button class="btn ghost" data-hero-action="trailer" data-act="trailer" data-type="${type}" data-id="${it.id}">🎬 Tráiler</button>
         <button class="btn ghost ${fav ? "fav-on" : ""}" data-hero-action="favorite" data-act="fav" data-type="${type}" data-id="${it.id}">${fav ? "✓ En Mi lista" : "+ Mi lista"}</button>
       </div>
-    </div>
     <div class="hero-carousel-controls" aria-label="Controles del carrusel">
         <button class="hero-arrow" type="button" data-hero-step="-1" aria-label="Destacado anterior">‹</button>
         <div class="hero-indicators hero-thumbnails" role="group" aria-label="Elegir destacado">
@@ -562,7 +561,7 @@ function startDetailPlayback(id, type, season = 1, episode = 1){
     const loader = createPlayerLoader();
     frame.addEventListener("load", () => { schedulePlayerLoaderRemoval(loader); focusPlayerFrame(frame, true); }, {once:true});
     frame.src = src; player.append(loader, frame, createPlayerExitButton()); document.body.append(player);
-    window.CinenovaTvRemote?.setPlayerFullscreen(true); requestAnimationFrame(() => $(".player-exit", player)?.focus({preventScroll:true})); return;
+    window.CinenovaTvRemote?.setPlayerFullscreen(true); requestAnimationFrame(() => frame.focus({preventScroll:true})); return;
   }
   const player = document.getElementById(`player-${id}`), frame = player?.querySelector("iframe");
   if (!player || !frame) return;
@@ -580,7 +579,7 @@ function startDetailPlayback(id, type, season = 1, episode = 1){
     if (!$(".player-exit", player)) player.append(createPlayerExitButton());
     showPlayerHud();
     window.CinenovaTvRemote?.setPlayerFullscreen(true);
-    requestAnimationFrame(() => $(".player-exit", player)?.focus({preventScroll:true}));
+    requestAnimationFrame(() => frame.focus({preventScroll:true}));
   }
 }
 function createPlayerLoader(){
@@ -601,6 +600,9 @@ function createPlayerExitButton(){
   const button = document.createElement("button");
   button.type = "button"; button.className = "player-exit"; button.textContent = "← Salir";
   button.setAttribute("aria-label", "Salir del reproductor");
+  ["keydown","keyup"].forEach(type => button.addEventListener(type, e => {
+    if (e.key === " " || e.code === "Space") { e.preventDefault(); e.stopImmediatePropagation(); }
+  }));
   button.addEventListener("click", exitPlayerFullscreen);
   return button;
 }

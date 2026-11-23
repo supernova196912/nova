@@ -42,8 +42,8 @@ nav a.active { border-color: var(--accent); }
 
 /* Portada: indicadores compactos en lugar de una fila de miniaturas. */
 .hero {
-  height: min(76svh, 760px);
-  min-height: 500px;
+  height: 76vh;
+  min-height: 540px;
   background: #0a1220;
 }
 .hero::after {
@@ -51,24 +51,22 @@ nav a.active { border-color: var(--accent); }
     linear-gradient(90deg, rgba(8, 13, 24, .96) 0%, rgba(8, 13, 24, .72) 44%, rgba(8, 13, 24, .08) 100%),
     linear-gradient(0deg, var(--bg) 0%, rgba(8, 13, 24, .06) 46%);
 }
-.hero .hcontent { bottom: 28px; max-width: 680px; gap: 10px; }
+.hero .hcontent { left: 3%; right: 3%; bottom: 26px; max-width: 780px; display:flex; flex-direction:column; justify-content:flex-end; gap:12px; }
 .hero .hcontent h1 { max-width: 620px; }
 .hero-carousel-controls {
-  position: absolute;
+  position: static;
   z-index: 4;
-  right: 4%;
-  bottom: 24px;
   display: flex;
   align-items: center;
   gap: 10px;
   width: max-content;
   max-width: 100%;
-  margin-top: 20px;
-  padding: 6px 8px;
-  border: 1px solid rgba(220, 232, 255, .14);
-  border-radius: 999px;
-  background: rgba(8, 13, 24, .56);
-  backdrop-filter: blur(12px);
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
 }
 .hero-arrow {
   display: grid;
@@ -85,10 +83,10 @@ nav a.active { border-color: var(--accent); }
   transition: background .16s, border-color .16s, transform .16s;
 }
 .hero-arrow:hover { transform: scale(1.06); background: rgba(76, 130, 255, .28); border-color: #74a0ff; }
-.hero-indicators { display: flex; align-items: center; gap: 7px; padding: 0 3px; }
+.hero-indicators { display: flex; align-items: center; gap: 10px; padding: 0; }
 .hero-thumbnails { max-width: min(66vw, 580px); overflow-x: auto; scrollbar-width: none; scroll-behavior: smooth; }
 .hero-thumbnails::-webkit-scrollbar { display: none; }
-.hero-thumb { position: relative; flex: 0 0 72px; width: 72px; height: 48px; padding: 0; overflow: hidden; border: 2px solid rgba(255,255,255,.22); border-radius: 8px; background: #111827; opacity: .72; transition: transform .16s, opacity .16s, border-color .16s; }
+.hero-thumb { position: relative; flex: 0 0 86px; width: 86px; height: 48px; padding: 0; overflow: hidden; border: 2px solid rgba(255,255,255,.22); border-radius: 8px; background: #111827; opacity: .72; transition: transform .16s, opacity .16s, border-color .16s; }
 .hero-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .hero-thumb span { position: absolute; inset: auto 0 0; overflow: hidden; padding: 9px 4px 3px; background: linear-gradient(transparent,rgba(0,0,0,.88)); color: white; font-size: 8px; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
 .hero-thumb.active { border-color: #fff; opacity: 1; transform: scale(1.06); }
@@ -249,22 +247,24 @@ body.native-app .player-frame.player-fullscreen { box-shadow: none; }
 
 .episode-browser {
   margin-top: 24px;
-  padding: 18px;
+  padding: 18px 22px;
+  overflow: visible;
   border: 1px solid var(--line);
   border-radius: 16px;
   background: rgba(16, 26, 43, .68);
 }
 .episode-browser-head {
   display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 18px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px 24px;
   margin-bottom: 14px;
 }
 .episode-browser-head h3 { font-size: 20px; }
 .episode-browser-head p { margin-top: 4px; color: var(--muted); font-size: 13px; }
 .episode-search { max-width: 320px; }
-.episode-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; overflow: visible; }
+.episode-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 8px 4px 18px; overflow: visible; }
 .episode-card {
   display: flex;
   flex-direction: column;
@@ -326,14 +326,14 @@ body.tv-mode .season-picker select { min-height: 54px; font-size: 18px; }
 body.tv-mode .player-frame.player-fullscreen iframe:focus { outline: 0; outline-offset: 0; transform: none; }
 
 /* TV layout refinements */
-body.tv-mode #hero.hero { height:75vh; min-height:75vh; max-height:82vh; }
+body.tv-mode #hero.hero { height:76vh; min-height:540px; max-height:none; }
 body.tv-mode .hero::after { background:linear-gradient(90deg,rgba(8,13,24,.82) 0%,rgba(8,13,24,.42) 40%,transparent 76%),linear-gradient(0deg,rgba(8,13,24,.76),transparent 42%); }
-body.tv-mode .hero .hcontent { bottom:28px; max-width:680px; display:flex; flex-direction:column; justify-content:flex-end; gap:10px; }
+body.tv-mode #hc .hcontent { left:3%; right:3%; bottom:26px; max-width:780px; display:flex; flex-direction:column; justify-content:flex-end; gap:12px; }
 body.tv-mode .hero .hcontent h1 { max-width:18ch; font-size:clamp(26px,3vw,40px); line-height:1.12; margin:0; }
 body.tv-mode .hero .hcontent p { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; max-width:56ch; }
 body.tv-mode .hero .actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:6px; }
-body.tv-mode #hero #hc > .hero-carousel-controls { position:absolute; right:4%; bottom:22px; gap:8px; margin:0; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
-body.tv-mode .hero-thumb { flex-basis:76px; width:76px; height:44px; border-radius:8px; }
+body.tv-mode #hc .hero-carousel-controls { position:static; gap:10px; margin-top:8px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
+body.tv-mode .hero-thumb { flex-basis:86px; width:86px; height:48px; border-radius:8px; }
 body.tv-mode .hero-arrow { display:none; }
 body.tv-mode .page > .grid, body.tv-mode .grid, body.tv-mode .cards-grid { display:grid !important; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)) !important; gap:18px 14px !important; align-items:start; }
 body.tv-mode .page > .grid > .card, body.tv-mode .grid > .card, body.tv-mode .cards-grid > .card { width:100% !important; min-width:0 !important; max-width:100% !important; margin:0 !important; box-sizing:border-box; }
@@ -363,7 +363,7 @@ body.tv-mode .episode-browser-app { margin: 24px 3% 12px; }
 body.native-app .episode-browser-app { margin: 24px 3% 12px; }
 body.tv-mode .episode-list, body.native-app .episode-list { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); overflow:visible; gap:12px; padding:8px 4px 18px; }
 body.tv-mode .episode-card, body.native-app .episode-card { min-width:0; scroll-snap-align:none; border-color:rgba(170,190,220,.14); background:#111d2e; }
-body.tv-mode .episode-card:focus-visible, body.native-app .episode-card:focus-visible { outline:3px solid #74a0ff; outline-offset:2px; border-color:#769aff; box-shadow:0 10px 28px rgba(0,0,0,.4); }
+body.tv-mode .episode-card:focus-visible, body.native-app .episode-card:focus-visible { position:relative; z-index:1; outline:3px solid #74a0ff; outline-offset:2px; border-color:#769aff; transform:scale(1.025); box-shadow:0 10px 28px rgba(0,0,0,.4); }
 body.tv-mode .episode-browser-head { justify-content:flex-start; align-items:center; flex-wrap:wrap; gap:18px; }
 body.native-app .episode-browser-head { justify-content:flex-start; align-items:center; flex-wrap:wrap; gap:18px; }
 body.tv-mode .season-picker, body.native-app .season-picker { flex-direction:row; align-items:center; min-width:0; }

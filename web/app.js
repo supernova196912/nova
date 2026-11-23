@@ -579,7 +579,7 @@ function startDetailPlayback(id, type, season = 1, episode = 1){
   if (isTvMode){
     player.classList.add("player-fullscreen");
     if (!$(".player-exit", player)) player.append(createPlayerExitButton());
-    showPlayerExitButton();
+    showPlayerHud();
     window.CinenovaTvRemote?.setPlayerFullscreen(true);
     requestAnimationFrame(() => $(".player-exit", player)?.focus({preventScroll:true}));
   }
@@ -605,13 +605,21 @@ function createPlayerExitButton(){
   button.addEventListener("click", exitPlayerFullscreen);
   return button;
 }
-function showPlayerExitButton(){
+function showPlayerHud(key){
   const button = $(".player-frame.player-fullscreen .player-exit");
   if (!button) return;
-  button.classList.add("visible"); clearTimeout(playerExitTimer);
-  if (isTvMode) return;
-  playerExitTimer = setTimeout(() => { if (!button.matches(":focus")) button.classList.remove("visible"); }, 3500);
+  button.classList.add("visible");
+  $(".player-frame.player-fullscreen iframe")?.contentWindow?.postMessage({type:"cinenova-show-controls",key}, "*");
+  clearTimeout(playerExitTimer);
+  const hide = () => {
+    if (button.matches(":focus")){ playerExitTimer = setTimeout(hide, 3500); return; }
+    button.classList.remove("visible");
+  };
+  playerExitTimer = setTimeout(hide, 3500);
 }
+["pointermove","mousemove"].forEach(type => document.addEventListener(type, () => {
+  if ($(".player-frame.player-fullscreen")) showPlayerHud();
+}, {passive:true}));
 window.cinenovaExitPlayerFullscreen = () => {
   const frame = $(".player-frame.player-fullscreen iframe");
   $$(".player-frame.player-fullscreen").forEach(player => player.classList.remove("player-fullscreen"));
@@ -627,9 +635,9 @@ window.cinenovaExitPlayerFullscreen = () => {
 window.addEventListener("message", event => {
   const type = event.data?.type;
   if (type === "cinenova-exit-player") exitPlayerFullscreen();
-  else if (type === "cinenova-player-activity") showPlayerExitButton();
+  else if (type === "cinenova-player-activity") showPlayerHud();
   else if (type === "cinenova-player-exit-focus") {
-    showPlayerExitButton(); requestAnimationFrame(() => $(".player-frame.player-fullscreen .player-exit")?.focus({preventScroll:true}));
+    showPlayerHud(); requestAnimationFrame(() => $(".player-frame.player-fullscreen .player-exit")?.focus({preventScroll:true}));
   }
 });
 
@@ -716,6 +724,9 @@ function handleFullscreenPlayerKey(key, player, event){
   return true;
 }
 window.cinenovaForwardPlayerKey = key => {
+  const keyForEmbed = !document.activeElement?.matches(".player-exit")
+    && ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter"," ","MediaPlayPause"].includes(key) ? key : undefined;
+  showPlayerHud(keyForEmbed);
   activateNativeTvMode();
   const player = $(".player-frame.player-fullscreen");
   if (player && handleFullscreenPlayerKey(key, player)) return true;
@@ -868,7 +879,21 @@ document.addEventListener("fullscreenchange", () => {
 });
 $("#mclose").onclick = closeModal;
 $("#modal").onclick = e => { if (e.target.id === "modal") closeModal(); };
+function focusTvSidebar(){
+  const sidebar = $("#tvSidebar");
+  if (!sidebar) return false;
+  const isVisible = el => el.getClientRects().length && getComputedStyle(el).visibility !== "hidden" && getComputedStyle(el).display !== "none";
+  const active = $("[data-r].active", sidebar);
+  const target = active && isVisible(active) ? active : $$('a[href],button:not(:disabled),[tabindex="0"]', sidebar).find(isVisible);
+  target?.focus({preventScroll:true});
+  return Boolean(target);
+}
 window.addEventListener("keydown", e => {
+  if ($(".player-frame.player-fullscreen")) {
+    const keyForEmbed = !document.activeElement?.matches(".player-exit")
+      && ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter"," ","MediaPlayPause"].includes(e.key) ? e.key : undefined;
+    showPlayerHud(keyForEmbed);
+  }
   if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key) && isNativeApp()) activateNativeTvMode();
   const editing = e.target.matches("input,textarea,select,[contenteditable='true']");
   if (["Escape","Backspace"].includes(e.key) && !editing){ if (handleAppBack()){ e.preventDefault(); e.stopImmediatePropagation(); } }
@@ -905,7 +930,7 @@ window.addEventListener("keydown", e => {
   if (!isTvMode || editing || !e.key.startsWith("Arrow")) return;
   const current = document.activeElement;
   const playerOverlayFallback = $(".player-frame.player-fullscreen");
-  if (playerOverlayFallback) { if (e.key.startsWith("Arrow")) showPlayerExitButton(); return; }
+  if (playerOverlayFallback) { if (e.key.startsWith("Arrow")) showPlayerHud(); return; }
   const sideMenu = current.closest("#tvSidebar");
   if (sideMenu){
     if (e.key === "ArrowUp" || e.key === "ArrowDown"){
@@ -922,18 +947,33 @@ window.addEventListener("keydown", e => {
     }
     return;
   }
+  if (isTvMode && !editing && e.key === "ArrowLeft" && !e.target.closest("#modal,.player-frame.player-fullscreen")){
+    const currentRect = current.getBoundingClientRect();
+    const currentCenterX = currentRect.left + currentRect.width / 2;
+    const appControls = $$('#app a[href],#app button:not(:disabled):not(.arr),#app select:not(:disabled),#app input:not(:disabled),#app [tabindex="0"]')
+      .filter(el => el !== current && el.getClientRects().length && getComputedStyle(el).visibility !== "hidden" && getComputedStyle(el).display !== "none" && !el.closest("[hidden]"));
+    const hasLeftNeighbor = appControls.some(el => {
+      const rect = el.getBoundingClientRect(), centerX = rect.left + rect.width / 2;
+      const verticalOverlap = Math.min(currentRect.bottom, rect.bottom) - Math.max(currentRect.top, rect.top);
+      const sameRow = verticalOverlap > Math.min(currentRect.height, rect.height) * .35
+        || Math.abs(rect.top + rect.height / 2 - (currentRect.top + currentRect.height / 2)) <= Math.max(24, Math.min(currentRect.height, rect.height) * .65);
+      return centerX < currentCenterX - 4 && sameRow;
+    });
+    if (!hasLeftNeighbor){ e.preventDefault(); focusTvSidebar(); return; }
+  }
   const tabs = $(".detail-tabs");
   if (tabs && current.closest(".detail-tabs")){
     const items = $$(".detail-tab", tabs), index = items.indexOf(current);
     if (e.key === "ArrowLeft" || e.key === "ArrowRight"){
       e.preventDefault(); const next = items[index + (e.key === "ArrowLeft" ? -1 : 1)];
-      if (next){ next.focus({preventScroll:true}); next.scrollIntoView({block:"nearest",inline:"nearest",behavior:"smooth"}); }
-      else if (e.key === "ArrowLeft") $("#tvSidebar [data-r].active")?.focus({preventScroll:true});
+      if (next){ next.focus({preventScroll:true}); activateDetailTab(next.dataset.detailTab); next.scrollIntoView({block:"nearest",inline:"nearest",behavior:"smooth"}); }
+      else if (e.key === "ArrowLeft") focusTvSidebar();
       return;
     }
     if (e.key === "ArrowDown"){
       const activePanel = $(".detail-panel:not([hidden])");
-      const first = activePanel?.querySelector("button:not(:disabled),a[href],select:not(:disabled),input:not(:disabled),[tabindex='0']");
+      const first = activePanel && $$('a[href],button:not(.arr):not(:disabled),select:not(:disabled),[tabindex="0"]', activePanel)
+        .find(el => el.getClientRects().length && getComputedStyle(el).visibility !== "hidden" && getComputedStyle(el).display !== "none" && !el.closest("[hidden]"));
       if (first){ e.preventDefault(); first.focus({preventScroll:true}); first.scrollIntoView({block:"nearest",inline:"nearest"}); }
       return;
     }

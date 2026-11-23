@@ -1,7 +1,10 @@
 package com.nova.cinenova;
 
 import android.net.Uri;
+import android.app.UiModeManager;
+import android.content.Context;
 import android.os.Bundle;
+import android.content.res.Configuration;
 import android.os.SystemClock;
 import android.content.pm.ActivityInfo;
 import android.view.View;
@@ -237,8 +240,12 @@ public class MainActivity extends BridgeActivity {
     }
 
     private boolean detectTelevisionDevice() {
+        UiModeManager uiModeManager = (UiModeManager) getSystemService(Context.UI_MODE_SERVICE);
+        boolean televisionUiMode = uiModeManager != null
+            && uiModeManager.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION;
         return getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
-            || getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_TELEVISION);
+            || getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_TELEVISION)
+            || televisionUiMode;
     }
 
     @Override

@@ -19,6 +19,7 @@ let routeToken = 0;
 let episodeRequestToken = 0;
 const app = $("#app");
 let isTvMode = false;
+let nativeDpadTvMode = false;
 let lastPlaybackTrigger = null;
 let playerExitTimer = 0;
 let suppressPlayerNativeFullscreenExit = false;
@@ -34,9 +35,16 @@ function updateDeviceMode(){
   try { nativeTv = window.CinenovaTvRemote?.isTelevisionDevice?.() === true; } catch(e) {}
   const forced = new URLSearchParams(location.search).get("tv") === "1";
   const coarseLarge = matchMedia("(min-width: 1024px) and (pointer: coarse)").matches;
-  isTvMode = forced || tvUa || coarseLarge || nativeTv;
+  isTvMode = forced || tvUa || coarseLarge || nativeTv || (nativeApp && nativeDpadTvMode);
   document.body.classList.toggle("native-app", nativeApp);
   document.body.classList.toggle("tv-mode", isTvMode);
+}
+function activateNativeTvMode(){
+  if (!isNativeApp()) return false;
+  nativeDpadTvMode = true;
+  updateDeviceMode();
+  document.body.classList.add("tv-mode");
+  return true;
 }
 updateDeviceMode();
 window.addEventListener("resize", updateDeviceMode, {passive:true});
@@ -241,13 +249,13 @@ function renderHero(items){
         <button class="btn ghost" data-hero-action="trailer" data-act="trailer" data-type="${type}" data-id="${it.id}">🎬 Tráiler</button>
         <button class="btn ghost ${fav ? "fav-on" : ""}" data-hero-action="favorite" data-act="fav" data-type="${type}" data-id="${it.id}">${fav ? "✓ En Mi lista" : "+ Mi lista"}</button>
       </div>
-      <div class="hero-carousel-controls" aria-label="Controles del carrusel">
+    </div>
+    <div class="hero-carousel-controls" aria-label="Controles del carrusel">
         <button class="hero-arrow" type="button" data-hero-step="-1" aria-label="Destacado anterior">‹</button>
         <div class="hero-indicators hero-thumbnails" role="group" aria-label="Elegir destacado">
           ${items.map((x, k) => `<button class="hero-thumb ${k === cur ? "active" : ""}" type="button" data-slide="${k}" aria-label="Mostrar ${esc(titleOf(x))}" aria-pressed="${k === cur}"><img loading="lazy" src="${img(x.poster_path, "w185")}" alt=""><span>${esc(titleOf(x))}</span></button>`).join("")}
         </div>
         <button class="hero-arrow" type="button" data-hero-step="1" aria-label="Siguiente destacado">›</button>
-      </div>
     </div>`;
     if (isTvMode && (oldAction || oldSlide !== undefined)) requestAnimationFrame(() =>
       (oldAction ? $(`#hc [data-hero-action="${oldAction}"]`) : $(`#hc [data-slide="${oldSlide}"]`))?.focus({preventScroll:true})
@@ -335,7 +343,7 @@ function search(q){
   document.title = `Buscar: ${query} — CINENOVA`;
   const form = `<form class="search-page-form" id="searchForm"><input id="searchQuery" type="search" value="${esc(query)}" ${isTvMode ? "readonly" : ""} placeholder="Buscar películas, series o actores" aria-label="Buscar películas, series o actores"><button class="btn primary" type="submit">Buscar</button></form>`;
   if (!query){
-    app.innerHTML = `<div class="page search-page"><h1>Buscar</h1>${form}<p class="muted">Escribí un título, una serie o el nombre de un actor.</p></div>`;
+    app.innerHTML = `<div class="page search-page"><h1>Buscar</h1>${form}<p class="muted">Escribí un título, una serie o el nombre de un actor.</p><nav class="search-quick-links" aria-label="Búsquedas rápidas">${[["Tendencias","#/lista/top-peliculas"],["Acción","#/lista/genero-28"],["Anime","#/lista/anime"],["Ciencia ficción","#/lista/genero-878"],["Comedia","#/lista/genero-35"],["Terror","#/lista/genero-27"],["Doramas","#/lista/doramas"]].map(([label,href])=>`<a class="chip" href="${href}">${label}</a>`).join("")}</nav></div>`;
     bindSearchForm();
     return;
   }
@@ -544,7 +552,7 @@ function startDetailPlayback(id, type, season = 1, episode = 1){
   const overlayPlayback = isNativeApp() || isTvMode;
   const path = type === "tv" ? `f/embed/tv/${id}/${season}/${episode}` : `f/embed/movie/${id}`;
   const playerURL = new URL(unlimplayUrl(path), location.href);
-  if (isTvMode) playerURL.searchParams.set("cn_tv", "1");
+  if (isTvMode || isNativeApp()) playerURL.searchParams.set("cn_tv", "1");
   const src = playerURL.href;
   if (overlayPlayback){
     $(".app-player-overlay")?.remove();
@@ -621,7 +629,7 @@ window.addEventListener("message", event => {
   if (type === "cinenova-exit-player") exitPlayerFullscreen();
   else if (type === "cinenova-player-activity") showPlayerExitButton();
   else if (type === "cinenova-player-exit-focus") {
-    showPlayerExitButton(); $(".player-frame.player-fullscreen .player-exit")?.focus({preventScroll:true});
+    showPlayerExitButton(); requestAnimationFrame(() => $(".player-frame.player-fullscreen .player-exit")?.focus({preventScroll:true}));
   }
 });
 
@@ -660,15 +668,19 @@ function installSameOriginPlayerBridge(doc, win){
       else { const target=doc.activeElement; if (target && target!==doc.body) target.click?.(); }
     } else if (arrows.includes(e.key)) {
       e.preventDefault(); e.stopImmediatePropagation();
-      const active=doc.activeElement||doc.body, seek=active.matches?.('input[type="range"],[role="slider"],.vjs-progress-control,.plyr__progress,.jw-slider-time,[class*="progress" i],[class*="seek" i]');
-      if (seek && video && (e.key === "ArrowLeft" || e.key === "ArrowRight")) video.currentTime=Math.max(0,video.currentTime+(e.key === "ArrowLeft"?-10:10));
-      else {
-        const controls=[...doc.querySelectorAll('button:not(:disabled),a[href],select:not(:disabled),input:not(:disabled):not([type="hidden"]),[role="button"],[role="menuitem"],[role="option"],[tabindex]')].filter(el=>el.getClientRects().length&&getComputedStyle(el).visibility!=="hidden"&&getComputedStyle(el).display!=="none");
-        const focused=active.closest?.('button,a[href],select,input,[role="button"],[role="menuitem"],[role="option"],[tabindex]');
+      const active=doc.activeElement||doc.body;
+      {
+        const controls=[...doc.querySelectorAll('button:not(:disabled),a[href],select:not(:disabled),input:not(:disabled):not([type="hidden"]),[role="button"],[role="menuitem"],[role="option"],[tabindex],[onclick],li,.item')].filter(el=>el.getClientRects().length&&getComputedStyle(el).visibility!=="hidden"&&getComputedStyle(el).display!=="none");
+        const focused=active.closest?.('button,a[href],select,input,[role="button"],[role="menuitem"],[role="option"],[tabindex],[onclick],li,.item');
         const rect=focused?.getBoundingClientRect();
         if (!controls.includes(focused)) controls[0]?.focus({preventScroll:true});
-        else if ((e.key === "ArrowUp" && rect?.top < innerHeight*.25)) send("cinenova-player-exit-focus");
-        else { const dx=e.key==="ArrowLeft"?-1:e.key==="ArrowRight"?1:0,dy=e.key==="ArrowUp"?-1:e.key==="ArrowDown"?1:0,cx=rect.left+rect.width/2,cy=rect.top+rect.height/2; const next=controls.filter(el=>el!==focused).map(el=>{const r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,p=dx?(x-cx)*dx:(y-cy)*dy,c=dx?Math.abs(y-cy):Math.abs(x-cx);return{el,score:p+c*1.5,p};}).filter(x=>x.p>4).sort((a,b)=>a.score-b.score)[0]; next?.el.focus({preventScroll:true}); next?.el.scrollIntoView?.({block:"nearest",inline:"nearest"}); }
+        else {
+          const top = Math.min(...controls.map(el=>el.getBoundingClientRect().top));
+          const topRow = rect.top <= top + Math.max(40, rect.height*.8);
+          const row = controls.filter(el=>Math.abs(el.getBoundingClientRect().top-rect.top)<Math.max(30,rect.height*.7));
+          if ((e.key === "ArrowUp" && topRow) || (e.key === "ArrowRight" && topRow && row.indexOf(focused)===row.length-1)) send("cinenova-player-exit-focus");
+          else { const dx=e.key==="ArrowLeft"?-1:e.key==="ArrowRight"?1:0,dy=e.key==="ArrowUp"?-1:e.key==="ArrowDown"?1:0,cx=rect.left+rect.width/2,cy=rect.top+rect.height/2; const next=controls.filter(el=>el!==focused).map(el=>{const r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,p=dx?(x-cx)*dx:(y-cy)*dy,c=dx?Math.abs(y-cy):Math.abs(x-cx);return{el,score:p+c*1.5,p};}).filter(x=>x.p>4).sort((a,b)=>a.score-b.score)[0]; next?.el.focus({preventScroll:true}); next?.el.scrollIntoView?.({block:"nearest",inline:"nearest"}); }
+        }
       }
     }
   }, true);
@@ -687,14 +699,26 @@ function installSameOriginPlayerBridge(doc, win){
     if(child.dataset.cinenovaObserved)return; child.dataset.cinenovaObserved="1"; installFrame(child);
   })).observe(doc.documentElement,{childList:true,subtree:true});
 }
+function handleFullscreenPlayerKey(key, player, event){
+  if (!player || !["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter"," ","MediaPlayPause"].includes(key)) return false;
+  const frame = $("iframe", player), exitButton = $(".player-exit", player);
+  const onExit = document.activeElement === exitButton;
+  event?.preventDefault(); event?.stopImmediatePropagation();
+  if (onExit){
+    if (key === "Enter"){ exitButton?.click(); return true; }
+    if (key === "ArrowDown" || key === "ArrowLeft"){
+      frame?.focus({preventScroll:true});
+      frame?.contentWindow?.postMessage({type:"cinenova-player-focus"}, "*");
+    }
+    return true;
+  }
+  frame?.contentWindow?.postMessage({type:"cinenova-player-key", key}, "*");
+  return true;
+}
 window.cinenovaForwardPlayerKey = key => {
-  if (document.activeElement?.matches(".player-exit") && ["Enter"," "].includes(key)){
-    $(".player-frame.player-fullscreen .player-exit")?.click(); return true;
-  }
-  if (isNativeApp() && isTvMode && $(".player-frame.player-fullscreen") && !document.activeElement?.matches(".player-exit")){
-    const tap = window.CinenovaTvRemote?.sendPlayerTap;
-    if (["Enter"," ","MediaPlayPause"].includes(key)){ tap?.(0.5,0.5); return true; }
-  }
+  activateNativeTvMode();
+  const player = $(".player-frame.player-fullscreen");
+  if (player && handleFullscreenPlayerKey(key, player)) return true;
   const frame = $(".app-player-overlay iframe, .player-frame.player-fullscreen iframe");
   try{
     const win = frame?.contentWindow; if (!win) return false;
@@ -844,7 +868,8 @@ document.addEventListener("fullscreenchange", () => {
 });
 $("#mclose").onclick = closeModal;
 $("#modal").onclick = e => { if (e.target.id === "modal") closeModal(); };
-document.addEventListener("keydown", e => {
+window.addEventListener("keydown", e => {
+  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key) && isNativeApp()) activateNativeTvMode();
   const editing = e.target.matches("input,textarea,select,[contenteditable='true']");
   if (["Escape","Backspace"].includes(e.key) && !editing){ if (handleAppBack()){ e.preventDefault(); e.stopImmediatePropagation(); } }
   const modal = $("#modal");
@@ -875,20 +900,12 @@ document.addEventListener("keydown", e => {
     const episode = $(".episode-card"); if (episode){ e.preventDefault(); episode.focus({preventScroll:true}); episode.scrollIntoView({block:"nearest",inline:"nearest"}); return; }
   }
   if (e.key === "Enter" && e.target.matches('[role="button"][tabindex="0"]') && !e.target.matches("button,a")){ e.preventDefault(); e.target.click(); return; }
+  const playerOverlay = $(".player-frame.player-fullscreen");
+  if (playerOverlay && handleFullscreenPlayerKey(e.key, playerOverlay, e)) return;
   if (!isTvMode || editing || !e.key.startsWith("Arrow")) return;
   const current = document.activeElement;
-  const playerOverlay = $(".player-frame.player-fullscreen");
-  if (playerOverlay){
-    if (e.key.startsWith("Arrow")) showPlayerExitButton();
-    if (e.key === "ArrowUp" && current === $(".player-exit", playerOverlay)) return;
-    if (e.key === "ArrowDown" && current === $(".player-exit", playerOverlay)) {
-      e.preventDefault();
-      const frame=$("iframe",playerOverlay); frame?.focus({preventScroll:true});
-      frame?.contentWindow?.postMessage({type:"cinenova-player-focus"}, "*");
-      return;
-    }
-    return;
-  }
+  const playerOverlayFallback = $(".player-frame.player-fullscreen");
+  if (playerOverlayFallback) { if (e.key.startsWith("Arrow")) showPlayerExitButton(); return; }
   const sideMenu = current.closest("#tvSidebar");
   if (sideMenu){
     if (e.key === "ArrowUp" || e.key === "ArrowDown"){

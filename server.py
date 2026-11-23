@@ -96,10 +96,10 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
     if (!doc?.documentElement || doc.documentElement.dataset.cinenovaPlayerBridge) return;
     doc.documentElement.dataset.cinenovaPlayerBridge = "1";
     const style = doc.createElement("style");
-    style.textContent = 'button:focus,a:focus,select:focus,input:focus,[role="button"]:focus,[role="menuitem"]:focus,[role="option"]:focus,[tabindex]:focus{outline:3px solid #74a0ff!important;outline-offset:2px!important;box-shadow:0 0 14px rgba(76,130,255,.7)!important}';
+    style.textContent = 'button, a, select, [role="button"], [role="menuitem"], [role="option"], [class*="episode" i], [class*="server" i], [class*="dropdown" i]{opacity:1!important;visibility:visible!important;pointer-events:auto!important}button:focus,a:focus,select:focus,input:focus,[role="button"]:focus,[role="menuitem"]:focus,[role="option"]:focus,[tabindex]:focus,li:focus,.item:focus{outline:3px solid #74a0ff!important;outline-offset:2px!important;border-radius:8px!important;box-shadow:0 0 14px rgba(76,130,255,.7)!important}';
     (doc.head || doc.documentElement).appendChild(style);
-    const visibleControls = () => [...doc.querySelectorAll('button:not(:disabled),a[href],select:not(:disabled),input:not(:disabled):not([type="hidden"]),[role="button"],[role="menuitem"],[role="option"],[tabindex]')]
-      .filter(el => !el.matches("iframe") && el.getClientRects().length && (()=>{const s=doc.defaultView.getComputedStyle(el);return s.visibility !== "hidden" && s.display !== "none" && el.getAttribute("aria-hidden") !== "true";})());
+    const visibleControls = () => [...doc.querySelectorAll('button:not(:disabled),a,select:not(:disabled),input:not(:disabled):not([type="hidden"]),[role="button"],[role="menuitem"],[role="option"],[tabindex],[onclick],li,.item')]
+      .filter(el => !el.matches("iframe") && el.getClientRects().length && el.getBoundingClientRect().width > 14 && el.getBoundingClientRect().height > 14 && (()=>{const s=doc.defaultView.getComputedStyle(el);return s.visibility !== "hidden" && s.display !== "none" && el.getAttribute("aria-hidden") !== "true";})());
     const promoteVisibleControls = () => visibleControls().forEach(el => { if (el.tabIndex < 0) el.tabIndex = 0; });
     promoteVisibleControls();
     new MutationObserver(promoteVisibleControls).observe(doc.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["class","style","hidden","aria-hidden"]});
@@ -112,7 +112,7 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       }
       send("cinenova-player-activity");
       const target = doc.activeElement || doc.body, video = doc.querySelector("video");
-      const controls = visibleControls(), focused = target.closest?.('button,a[href],select,input,[role="button"],[role="menuitem"],[role="option"],[tabindex]');
+      const controls = visibleControls(), focused = target.closest?.('button,a,select,input,[role="button"],[role="menuitem"],[role="option"],[tabindex],[onclick],li,.item');
       const inMenu = !!target.closest?.('[role="menu"],[role="listbox"],.dropdown-menu,[class*="language-menu" i]');
       if (["Enter", " ", "MediaPlayPause"].includes(event.key)) {
         if (event.key === "MediaPlayPause" && inMenu) return;
@@ -125,11 +125,6 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       }
       if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(event.key)) return;
       event.preventDefault(); event.stopImmediatePropagation();
-      if (focused?.matches?.('input[type="range"],[role="slider"],.vjs-progress-control,.plyr__progress,.jw-slider-time,[class*="progress" i],[class*="seek" i]')) {
-        const video = doc.querySelector("video");
-        if (video && (event.key === "ArrowLeft" || event.key === "ArrowRight")) video.currentTime=Math.max(0,video.currentTime+(event.key === "ArrowLeft"?-10:10));
-        return;
-      }
       if (!controls.includes(focused)){ controls[0]?.focus({preventScroll:true}); return; }
       const rect=focused.getBoundingClientRect(), top=Math.min(...controls.map(el=>el.getBoundingClientRect().top));
       const topRow=rect.top<=top+Math.max(40,rect.height*.8), row=controls.filter(el=>Math.abs(el.getBoundingClientRect().top-rect.top)<Math.max(30,rect.height*.7));
@@ -147,7 +142,7 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       try { if (frame.contentDocument?.readyState === "complete") install(frame.contentDocument); } catch (_) {}
     };
     doc.querySelectorAll("iframe").forEach(observeFrame);
-    doc.addEventListener("focusin", event => { if (event.target.matches?.('button,a[href],select,input,[role="button"],[role="menuitem"],[role="option"],[tabindex]') && !event.target.matches("iframe")) lastFocusedControl=event.target; }, true);
+    doc.addEventListener("focusin", event => { if (event.target.matches?.('button,a,select,input,[role="button"],[role="menuitem"],[role="option"],[tabindex],[onclick],li,.item') && !event.target.matches("iframe")) lastFocusedControl=event.target; }, true);
     doc.addEventListener("focus", event => {
       const frame=event.target;
       if (!frame.matches?.("iframe")) return;
@@ -169,7 +164,7 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Enter"," ","MediaPlayPause"].includes(key)) return;
       const video = doc.querySelector("video");
       const target=doc.activeElement||doc.body, menuControl=!!target.closest?.('[role="menu"],[role="listbox"],.dropdown-menu,[class*="language-menu" i]');
-      const focused=target.closest?.('button,a[href],select,input,[role="button"],[role="menuitem"],[role="option"],[tabindex]');
+      const focused=target.closest?.('button,a,select,input,[role="button"],[role="menuitem"],[role="option"],[tabindex],[onclick],li,.item');
       if (video && ["Enter"," ","MediaPlayPause"].includes(key) && !menuControl && !focused) { if(video.paused) video.play?.().catch?.(()=>{}); else video.pause(); }
       else {
         const code={ArrowLeft:37,ArrowUp:38,ArrowRight:39,ArrowDown:40,Enter:13," ":32}[key];

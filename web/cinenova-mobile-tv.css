@@ -54,6 +54,10 @@ nav a.active { border-color: var(--accent); }
 .hero .hcontent { bottom: 42px; max-width: 650px; }
 .hero .hcontent h1 { max-width: 620px; }
 .hero-carousel-controls {
+  position: absolute;
+  z-index: 4;
+  right: 4%;
+  bottom: 24px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -313,6 +317,38 @@ body.tv-mode .episode-card img, body.tv-mode .episode-thumb-fallback { width: 17
 body.tv-mode .episode-card strong { font-size: 17px; }
 body.tv-mode .season-picker select { min-height: 54px; font-size: 18px; }
 body.tv-mode .player-frame.player-fullscreen iframe:focus { outline: 0; outline-offset: 0; transform: none; }
+
+/* TV layout refinements */
+body.tv-mode #hero.hero { height:75vh; min-height:75vh; max-height:82vh; }
+body.tv-mode .hero::after { background:linear-gradient(90deg,rgba(8,13,24,.82) 0%,rgba(8,13,24,.42) 40%,transparent 76%),linear-gradient(0deg,rgba(8,13,24,.76),transparent 42%); }
+body.tv-mode .hero .hcontent { bottom:32px; max-width:700px; }
+body.tv-mode .hero .hcontent h1 { max-width:18ch; font-size:clamp(1.9rem,3vw,2.7rem); }
+body.tv-mode .hero .hcontent p { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; max-width:56ch; }
+body.tv-mode .hero .actions { display:flex; flex-wrap:wrap; gap:10px; }
+body.tv-mode #hero #hc > .hero-carousel-controls { position:absolute; right:4%; bottom:22px; gap:8px; margin:0; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
+body.tv-mode .hero-thumb { flex-basis:92px; width:92px; height:52px; border-radius:10px; }
+body.tv-mode .hero-arrow { flex-basis:32px; width:32px; height:32px; padding:0; border-radius:6px; font-size:20px; opacity:.28; background:transparent; border-color:transparent; }
+body.tv-mode .hero-arrow:focus-visible { opacity:1; }
+body.tv-mode .page > .grid, body.tv-mode .grid, body.tv-mode .cards-grid { display:grid !important; grid-template-columns:repeat(auto-fill,minmax(175px,1fr)) !important; gap:22px 18px !important; align-items:start; }
+body.tv-mode .page > .grid > .card, body.tv-mode .grid > .card, body.tv-mode .cards-grid > .card { width:100% !important; min-width:0 !important; max-width:100% !important; margin:0 !important; box-sizing:border-box; }
+body.tv-mode .page > .grid > .card img, body.tv-mode .grid > .card img, body.tv-mode .cards-grid > .card img, body.tv-mode .grid > .card .poster { width:100% !important; aspect-ratio:2/3; object-fit:cover; border-radius:12px; }
+body.tv-mode .search-page #searchForm.search-page-form { display:flex; align-items:center; gap:10px; max-width:760px; width:100%; background:rgba(255,255,255,.08); border:1.5px solid rgba(255,255,255,.16); border-radius:16px; padding:6px 8px 6px 18px; backdrop-filter:blur(12px); }
+body.tv-mode .search-page #searchQuery { flex:1; min-width:0; background:transparent !important; border:0 !important; color:#f5f7fb !important; font-size:1.05rem; height:46px; outline:0; }
+body.tv-mode #searchQuery::placeholder { color:#8fa2c7; }
+body.tv-mode .search-page #searchForm button[type="submit"] { height:46px; padding:0 26px; border-radius:12px; font-size:.98rem; font-weight:700; flex-shrink:0; }
+body.tv-mode .search-quick-links { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+body.tv-mode .search-quick-links .chip { padding:10px 16px; }
+body.tv-mode .dhero { min-height:0; }
+body.tv-mode .dhero > .dinner { gap:28px; padding:28px 4% 22px; }
+body.tv-mode .dhero .dinner > .dposter { flex:0 0 180px; width:180px; min-width:180px; aspect-ratio:2/3; border-radius:14px; }
+body.tv-mode .dhero .dposter img { width:100%; height:100%; object-fit:cover; }
+body.tv-mode .dhero .dinfo h1 { font-size:clamp(24px,2.4vw,34px); }
+body.tv-mode .dhero .dinfo .facts { gap:6px 12px; margin:8px 0; font-size:.9rem; }
+body.tv-mode .dhero .dinfo .overview { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; max-width:68ch; font-size:.95rem; line-height:1.45; margin:8px 0 12px; }
+body.tv-mode .dhero .dinfo .crew { display:flex; flex-wrap:nowrap; gap:18px; overflow:hidden; white-space:nowrap; margin-top:10px; font-size:.82rem; }
+body.tv-mode .dhero .dinfo .actions { gap:10px; margin-top:12px; }
+body.tv-mode .dhero .dinfo .actions .btn { padding:11px 22px; font-size:.96rem; }
+body.tv-mode .detail-tabs { position:static; }
 body.tv-mode .episode-browser-app { margin: 24px 3% 12px; }
 body.native-app .episode-browser-app { margin: 24px 3% 12px; }
 body.tv-mode .episode-list, body.native-app .episode-list { display: flex; overflow-x: auto; gap: 14px; padding: 8px 4px 18px; scroll-snap-type: x mandatory; overscroll-behavior-inline: contain; }

@@ -240,7 +240,7 @@ function renderHero(items){
     const it = items[cur], type = it.media_type, fav = isFav(type, it.id);
     const ov = (it.overview || "").length > 230 ? it.overview.slice(0, 230).trim() + "…" : (it.overview || "");
     $("#hc").innerHTML = `<div class="hcontent" key="${cur}">
-      <span class="tag">${typeName(type)} ${year(it)}</span><span class="rating">★ ${score(it.vote_average)}</span>
+      <div class="hero-meta"><span class="tag">${typeName(type)} ${year(it)}</span><span class="rating">★ ${score(it.vote_average)}</span></div>
       <h1>${esc(titleOf(it))}</h1>
       <div class="hgen">${esc(genreNames(it))}</div>
       <p>${esc(ov)}</p>
@@ -529,9 +529,8 @@ async function loadSeason(id, n){
     const s = await api(`/tv/${id}/season/${n}`);
     if (t !== routeToken || request !== episodeRequestToken) return;
     box.innerHTML = (s.episodes || []).map(e => `<button class="episode-card" data-act="play-episode" data-type="tv" data-id="${id}" data-season="${n}" data-episode="${e.episode_number}" data-search="${esc(e.name || "").toLowerCase()}" aria-label="Reproducir temporada ${n}, episodio ${e.episode_number}: ${esc(e.name || "")}">
-      ${e.still_path ? `<img loading="lazy" src="${img(e.still_path, "w300")}" alt="">` : '<span class="episode-thumb-fallback"></span>'}
-      <span><strong>E${e.episode_number}. ${esc(e.name || "Episodio " + e.episode_number)}</strong><small>${fmtDate(e.air_date)}${e.runtime ? " · " + e.runtime + " min" : ""}</small></span>
-      <span class="episode-play-icon" aria-hidden="true">▶</span>
+      <span class="episode-thumb">${e.still_path ? `<img loading="lazy" src="${img(e.still_path, "w300")}" alt="">` : '<span class="episode-thumb-fallback"></span>'}<span class="episode-number-badge">E${e.episode_number}</span><span class="episode-play-icon" aria-hidden="true">▶</span></span>
+      <span class="episode-meta"><strong>${esc(e.name || "Episodio " + e.episode_number)}</strong><small>${fmtDate(e.air_date)}${e.runtime ? " · " + e.runtime + " min" : ""}</small></span>
     </button>`).join("") || '<p class="episode-empty">No hay capítulos disponibles para esta temporada.</p>';
   }catch(e){ if (t === routeToken && request === episodeRequestToken) box.innerHTML = '<p class="episode-empty">No se pudieron cargar los capítulos. Vuelve a elegir la temporada para reintentar.</p>'; }
 }
@@ -987,9 +986,6 @@ window.addEventListener("keydown", e => {
     const next = items[index + (e.key === "ArrowLeft" ? -1 : 1)];
     if (index >= 0){ e.preventDefault(); if (next) next.focus({preventScroll:true}); else if (e.key === "ArrowLeft") $("#tvSidebar [data-r].active")?.focus({preventScroll:true}); return; }
   }
-  if (current.matches(".episode-card") && e.key === "ArrowUp"){
-    e.preventDefault(); $("#playSeason")?.focus({preventScroll:true}) || $("[data-act='play-detail']")?.focus({preventScroll:true}); return;
-  }
   if (current.closest(".detail-panel") && e.key === "ArrowLeft"){
     const rect = current.getBoundingClientRect();
     if (rect.left <= 20){ e.preventDefault(); $("#tvSidebar [data-r].active")?.focus({preventScroll:true}); return; }
@@ -1018,10 +1014,19 @@ window.addEventListener("keydown", e => {
     e.preventDefault(); window.scrollTo({top:0,behavior:"smooth"}); return;
   }
   const episodeRail = current.closest(".episode-list");
-  if (episodeRail && (e.key === "ArrowLeft" || e.key === "ArrowRight")){
-    const cards = $$(".episode-card", episodeRail).filter(el => !el.hidden);
-    const index = cards.indexOf(current), next = cards[index + (e.key === "ArrowLeft" ? -1 : 1)];
-    if (index >= 0){ e.preventDefault(); if (next){ next.focus({preventScroll:true}); next.scrollIntoView({block:"nearest",inline:"center",behavior:"smooth"}); } return; }
+  if (episodeRail && current.matches(".episode-card")){
+    const cards = $$(".episode-card", episodeRail).filter(el => !el.hidden && el.getClientRects().length);
+    const index = cards.indexOf(current), columns = Math.max(1, getComputedStyle(episodeRail).gridTemplateColumns.split(" ").filter(Boolean).length);
+    const delta = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" ? -columns : e.key === "ArrowDown" ? columns : 0;
+    if (index >= 0 && delta){
+      e.preventDefault();
+      if (e.key === "ArrowUp" && index < columns) { $("#playSeason")?.focus({preventScroll:true}); return; }
+      if (e.key === "ArrowDown" && index + columns >= cards.length) { $(".detail-tabs .detail-tab")?.focus({preventScroll:true}); return; }
+      if (e.key === "ArrowLeft" && index % columns === 0) { focusTvSidebar(); return; }
+      const next = cards[index + delta];
+      if (next){ next.focus({preventScroll:true}); next.scrollIntoView({block:"nearest",inline:"nearest",behavior:"smooth"}); }
+      return;
+    }
   }
   const grid = current.closest(".grid");
   if (current.matches(".card") && grid){

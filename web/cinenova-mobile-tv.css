@@ -51,7 +51,7 @@ nav a.active { border-color: var(--accent); }
     linear-gradient(90deg, rgba(8, 13, 24, .96) 0%, rgba(8, 13, 24, .72) 44%, rgba(8, 13, 24, .08) 100%),
     linear-gradient(0deg, var(--bg) 0%, rgba(8, 13, 24, .06) 46%);
 }
-.hero .hcontent { bottom: 42px; max-width: 650px; }
+.hero .hcontent { bottom: 28px; max-width: 680px; gap: 10px; }
 .hero .hcontent h1 { max-width: 620px; }
 .hero-carousel-controls {
   position: absolute;
@@ -264,13 +264,13 @@ body.native-app .player-frame.player-fullscreen { box-shadow: none; }
 .episode-browser-head h3 { font-size: 20px; }
 .episode-browser-head p { margin-top: 4px; color: var(--muted); font-size: 13px; }
 .episode-search { max-width: 320px; }
-.episode-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.episode-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; overflow: visible; }
 .episode-card {
-  display: grid;
-  grid-template-columns: 132px minmax(0, 1fr) 38px;
-  align-items: center;
-  gap: 12px;
-  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-height: 0;
   padding: 8px;
   border: 1px solid transparent;
   border-radius: 12px;
@@ -279,19 +279,26 @@ body.native-app .player-frame.player-fullscreen { box-shadow: none; }
   text-align: left;
 }
 .episode-card:hover, .episode-card:focus-visible { border-color: #4c82ff; background: #192941; }
+.episode-thumb { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px; background: #202d40; }
 .episode-card img, .episode-thumb-fallback {
-  width: 132px;
+  display: block;
+  width: 100%;
+  height: 100%;
   aspect-ratio: 16 / 9;
-  border-radius: 8px;
   object-fit: cover;
   background: #202d40;
 }
-.episode-card strong { display: block; margin-bottom: 5px; font-size: 14px; }
-.episode-card small { display: block; color: var(--muted); font-size: 12px; }
+.episode-number-badge { position:absolute; top:7px; left:7px; padding:3px 6px; border-radius:5px; background:rgba(0,0,0,.76); color:#fff; font-size:11px; font-weight:800; }
+.episode-meta { display:flex; min-height:0; flex-direction:column; gap:6px; padding:0; }
+.episode-card strong { display:-webkit-box; margin:0; overflow:hidden; font-size:13px; font-weight:700; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+.episode-card small { display:block; overflow:hidden; color:var(--muted); font-size:11px; white-space:nowrap; text-overflow:ellipsis; }
 .episode-card .episode-play-icon {
   display: grid;
-  width: 34px;
-  height: 34px;
+  position:absolute;
+  right:8px;
+  bottom:8px;
+  width: 28px;
+  height: 28px;
   place-items: center;
   border-radius: 50%;
   background: #2b68ef;
@@ -306,31 +313,29 @@ body.tv-mode .tv-link:focus-visible { outline: 2px solid rgba(145,178,255,.55); 
 body.tv-mode header { display: none; }
 body.tv-mode .detail-tabs { top: 0; }
 body.tv-mode .download-app-btn { display: none; }
-body.tv-mode .card { flex-basis: 210px; width: 210px; }
+body.tv-mode .card { flex-basis: 156px; width: 156px; }
 body.tv-mode .btn, body.tv-mode .download-app-btn,
 body.tv-mode .player-controls select, body.tv-mode .episode-search {
   min-height: 54px;
   font-size: 18px;
 }
 body.tv-mode .detail-tab { min-height: 60px; font-size: 18px; }
-body.tv-mode .episode-card { min-height: 118px; grid-template-columns: 170px minmax(0, 1fr) 48px; font-size: 17px; }
-body.tv-mode .episode-card img, body.tv-mode .episode-thumb-fallback { width: 170px; }
-body.tv-mode .episode-card strong { font-size: 17px; }
+body.tv-mode .episode-card { min-height: 0; display:flex; flex-direction:column; font-size:14px; }
+body.tv-mode .episode-card strong { font-size: 13px; }
 body.tv-mode .season-picker select { min-height: 54px; font-size: 18px; }
 body.tv-mode .player-frame.player-fullscreen iframe:focus { outline: 0; outline-offset: 0; transform: none; }
 
 /* TV layout refinements */
 body.tv-mode #hero.hero { height:75vh; min-height:75vh; max-height:82vh; }
 body.tv-mode .hero::after { background:linear-gradient(90deg,rgba(8,13,24,.82) 0%,rgba(8,13,24,.42) 40%,transparent 76%),linear-gradient(0deg,rgba(8,13,24,.76),transparent 42%); }
-body.tv-mode .hero .hcontent { bottom:32px; max-width:700px; }
-body.tv-mode .hero .hcontent h1 { max-width:18ch; font-size:clamp(1.9rem,3vw,2.7rem); }
+body.tv-mode .hero .hcontent { bottom:28px; max-width:680px; display:flex; flex-direction:column; justify-content:flex-end; gap:10px; }
+body.tv-mode .hero .hcontent h1 { max-width:18ch; font-size:clamp(26px,3vw,40px); line-height:1.12; margin:0; }
 body.tv-mode .hero .hcontent p { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; max-width:56ch; }
-body.tv-mode .hero .actions { display:flex; flex-wrap:wrap; gap:10px; }
+body.tv-mode .hero .actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:6px; }
 body.tv-mode #hero #hc > .hero-carousel-controls { position:absolute; right:4%; bottom:22px; gap:8px; margin:0; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
-body.tv-mode .hero-thumb { flex-basis:92px; width:92px; height:52px; border-radius:10px; }
-body.tv-mode .hero-arrow { flex-basis:32px; width:32px; height:32px; padding:0; border-radius:6px; font-size:20px; opacity:.28; background:transparent; border-color:transparent; }
-body.tv-mode .hero-arrow:focus-visible { opacity:1; }
-body.tv-mode .page > .grid, body.tv-mode .grid, body.tv-mode .cards-grid { display:grid !important; grid-template-columns:repeat(auto-fill,minmax(175px,1fr)) !important; gap:22px 18px !important; align-items:start; }
+body.tv-mode .hero-thumb { flex-basis:76px; width:76px; height:44px; border-radius:8px; }
+body.tv-mode .hero-arrow { display:none; }
+body.tv-mode .page > .grid, body.tv-mode .grid, body.tv-mode .cards-grid { display:grid !important; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)) !important; gap:18px 14px !important; align-items:start; }
 body.tv-mode .page > .grid > .card, body.tv-mode .grid > .card, body.tv-mode .cards-grid > .card { width:100% !important; min-width:0 !important; max-width:100% !important; margin:0 !important; box-sizing:border-box; }
 body.tv-mode .page > .grid > .card img, body.tv-mode .grid > .card img, body.tv-mode .cards-grid > .card img, body.tv-mode .grid > .card .poster { width:100% !important; aspect-ratio:2/3; object-fit:cover; border-radius:12px; }
 body.tv-mode .search-page #searchForm.search-page-form { display:flex; align-items:center; gap:10px; max-width:760px; width:100%; background:rgba(255,255,255,.08); border:1.5px solid rgba(255,255,255,.16); border-radius:16px; padding:6px 8px 6px 18px; backdrop-filter:blur(12px); }
@@ -349,12 +354,19 @@ body.tv-mode .dhero .dinfo .overview { display:-webkit-box; -webkit-box-orient:v
 body.tv-mode .dhero .dinfo .crew { display:flex; flex-wrap:nowrap; gap:18px; overflow:hidden; white-space:nowrap; margin-top:10px; font-size:.82rem; }
 body.tv-mode .dhero .dinfo .actions { gap:10px; margin-top:12px; }
 body.tv-mode .dhero .dinfo .actions .btn { padding:11px 22px; font-size:.96rem; }
+body.tv-mode .card.person { flex-basis:122px; width:122px; text-align:center; }
+body.tv-mode .card.person .ctitle, body.tv-mode .card.person .cmeta { white-space:normal; }
+body:not(.tv-mode) .card.person { flex-basis:112px; width:112px; text-align:center; }
+body:not(.tv-mode) .card.person .ctitle, body:not(.tv-mode) .card.person .cmeta { white-space:normal; }
 body.tv-mode .detail-tabs { position:static; }
 body.tv-mode .episode-browser-app { margin: 24px 3% 12px; }
 body.native-app .episode-browser-app { margin: 24px 3% 12px; }
-body.tv-mode .episode-list, body.native-app .episode-list { display: flex; overflow-x: auto; gap: 14px; padding: 8px 4px 18px; scroll-snap-type: x mandatory; overscroll-behavior-inline: contain; }
-body.tv-mode .episode-card, body.native-app .episode-card { flex: 0 0 clamp(300px, 34vw, 420px); scroll-snap-align: start; border-color: rgba(170,190,220,.14); background: #111d2e; }
-body.tv-mode .episode-card:focus-visible, body.native-app .episode-card:focus-visible { outline: 0; border-color: #769aff; transform: scale(1.035); box-shadow: 0 10px 28px rgba(0,0,0,.4); }
+body.tv-mode .episode-list, body.native-app .episode-list { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); overflow:visible; gap:12px; padding:8px 4px 18px; }
+body.tv-mode .episode-card, body.native-app .episode-card { min-width:0; scroll-snap-align:none; border-color:rgba(170,190,220,.14); background:#111d2e; }
+body.tv-mode .episode-card:focus-visible, body.native-app .episode-card:focus-visible { outline:3px solid #74a0ff; outline-offset:2px; border-color:#769aff; box-shadow:0 10px 28px rgba(0,0,0,.4); }
+body.tv-mode .episode-browser-head { justify-content:flex-start; align-items:center; flex-wrap:wrap; gap:18px; }
+body.native-app .episode-browser-head { justify-content:flex-start; align-items:center; flex-wrap:wrap; gap:18px; }
+body.tv-mode .season-picker, body.native-app .season-picker { flex-direction:row; align-items:center; min-width:0; }
 body.tv-mode .card:focus-visible .poster, body.native-app .card:focus-visible .poster { border-color: #769aff; box-shadow: 0 12px 34px rgba(38,86,190,.42); }
 body.tv-mode .detail-tab:focus-visible,
 body.tv-mode .chip:focus-visible,
@@ -369,6 +381,7 @@ body.tv-mode #searchQuery:focus-visible {
 }
 
 @media (max-width: 767px) {
+  .episode-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   header {
     min-height: 56px;
     gap: 8px;

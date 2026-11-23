@@ -96,42 +96,61 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
     if (!doc?.documentElement || doc.documentElement.dataset.cinenovaPlayerBridge) return;
     doc.documentElement.dataset.cinenovaPlayerBridge = "1";
     const style = doc.createElement("style");
-    style.textContent = 'button, a, select, [role="button"], [role="menuitem"], [role="option"], [class*="episode" i], [class*="server" i], [class*="dropdown" i]{opacity:1!important;visibility:visible!important;pointer-events:auto!important}button:focus,a:focus,select:focus,input:focus,[role="button"]:focus,[role="menuitem"]:focus,[role="option"]:focus,[tabindex]:focus,li:focus,.item:focus{outline:3px solid #74a0ff!important;outline-offset:2px!important;border-radius:8px!important;box-shadow:0 0 14px rgba(76,130,255,.7)!important}';
+    style.textContent = 'button,a,select,[role="button"],[role="menuitem"],[role="option"],[class*="episode" i],[class*="server" i],[class*="dropdown" i]{opacity:1!important;visibility:visible!important;pointer-events:auto!important}button:focus,a:focus,select:focus,[role="button"]:focus,[role="menuitem"]:focus,[role="option"]:focus,[onclick]:focus,[tabindex]:focus,li:focus{outline:3px solid #74a0ff!important;outline-offset:2px!important;border-radius:8px!important;background-color:rgba(76,130,255,.25)!important}';
     (doc.head || doc.documentElement).appendChild(style);
-    const visibleControls = () => [...doc.querySelectorAll('button:not(:disabled),a,select:not(:disabled),input:not(:disabled):not([type="hidden"]),[role="button"],[role="menuitem"],[role="option"],[tabindex],[onclick],li,.item')]
-      .filter(el => !el.matches("iframe") && el.getClientRects().length && el.getBoundingClientRect().width > 14 && el.getBoundingClientRect().height > 14 && (()=>{const s=doc.defaultView.getComputedStyle(el);return s.visibility !== "hidden" && s.display !== "none" && el.getAttribute("aria-hidden") !== "true";})());
-    const promoteVisibleControls = () => visibleControls().forEach(el => { if (el.tabIndex < 0) el.tabIndex = 0; });
+    const controlSelector = 'button,a,select,[role="button"],[role="menuitem"],[role="option"],[onclick],[tabindex],li,.item';
+    const menuSelector = '[role="menu"],[role="listbox"],.dropdown-menu,[class*="language-menu" i],[class*="server-menu" i]';
+    const visibleControls = () => [...doc.querySelectorAll(controlSelector)]
+      .filter(el => !el.matches("iframe,video") && el.getClientRects().length && el.getBoundingClientRect().width > 12 && el.getBoundingClientRect().height > 12 && (()=>{const s=doc.defaultView.getComputedStyle(el);return s.visibility !== "hidden" && s.display !== "none" && !el.hidden && el.getAttribute("aria-hidden") !== "true";})());
+    const promoteVisibleControls = () => visibleControls().forEach(el => { if (el.tabIndex !== 0) el.tabIndex = 0; });
     promoteVisibleControls();
     new MutationObserver(promoteVisibleControls).observe(doc.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["class","style","hidden","aria-hidden"]});
     const view = doc.defaultView;
-    view.addEventListener("keyup", event => { if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
-    view.addEventListener("keypress", event => { if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
+    const movePlayerFocus = direction => {
+      const controls = visibleControls();
+      const active = doc.activeElement || doc.body;
+      const focused = active.closest?.(controlSelector);
+      if (!controls.length) return;
+      if (!controls.includes(focused)) { controls[0].focus({preventScroll:true}); return; }
+      const rect = focused.getBoundingClientRect();
+      const top = Math.min(...controls.map(el => el.getBoundingClientRect().top));
+      const topRow = rect.top <= top + Math.max(40, rect.height * .8);
+      const row = controls.filter(el => Math.abs(el.getBoundingClientRect().top - rect.top) < Math.max(30, rect.height * .7));
+      if ((direction === "ArrowUp" && topRow) || (direction === "ArrowRight" && topRow && row.indexOf(focused) === row.length - 1)) { send("cinenova-player-exit-focus"); return; }
+      const dx = direction === "ArrowLeft" ? -1 : direction === "ArrowRight" ? 1 : 0;
+      const dy = direction === "ArrowUp" ? -1 : direction === "ArrowDown" ? 1 : 0;
+      const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+      const nextControl = controls.filter(el => el !== focused).map(el => {
+        const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+        const primary = dx ? (x - cx) * dx : (y - cy) * dy;
+        const cross = dx ? Math.abs(y - cy) : Math.abs(x - cx);
+        return {el, score:primary + cross * 1.5, primary};
+      }).filter(item => item.primary > 4).sort((a,b) => a.score - b.score)[0]?.el;
+      nextControl?.focus({preventScroll:true});
+    };
+    const activatePlayerControl = () => {
+      const active = doc.activeElement || doc.body;
+      const focusedElement = active.closest?.(controlSelector);
+      const video = doc.querySelector("video");
+      if (focusedElement && visibleControls().includes(focusedElement)) {
+        const before = new Set(visibleControls());
+        focusedElement.click();
+        requestAnimationFrame(() => {
+          const opened = visibleControls().filter(el => !before.has(el));
+          const firstOption = opened.find(el => el.matches('button,a,[role="option"],[role="menuitem"],[onclick]')) || opened.find(el => el.closest?.(menuSelector) || el.matches('.item,li'));
+          firstOption?.focus({preventScroll:true});
+        });
+      } else if (video) {
+        if (video.paused) video.play?.().catch?.(() => {}); else video.pause();
+      }
+    };
+    const arrows = ["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"];
+    view.addEventListener("keyup", event => { if (arrows.includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
+    view.addEventListener("keypress", event => { if (arrows.includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
     view.addEventListener("keydown", event => {
-      if (["Escape", "Backspace", "BrowserBack"].includes(event.key)) {
-        event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-exit-player"); return;
-      }
-      send("cinenova-player-activity");
-      const target = doc.activeElement || doc.body, video = doc.querySelector("video");
-      const controls = visibleControls(), focused = target.closest?.('button,a,select,input,[role="button"],[role="menuitem"],[role="option"],[tabindex],[onclick],li,.item');
-      const inMenu = !!target.closest?.('[role="menu"],[role="listbox"],.dropdown-menu,[class*="language-menu" i]');
-      if (["Enter", " ", "MediaPlayPause"].includes(event.key)) {
-        if (event.key === "MediaPlayPause" && inMenu) return;
-        if (focused && event.key !== "MediaPlayPause") {
-          event.preventDefault(); const before=new Set(controls); focused.click?.();
-          requestAnimationFrame(()=>{ const opened=visibleControls().filter(el=>!before.has(el)); const option=opened.find(el=>el.matches('[role="option"],[role="menuitem"]') || el.closest?.('[role="menu"],[role="listbox"],.dropdown-menu,[class*="language-menu" i]')); option?.focus({preventScroll:true}); });
-        } else if (video) { event.preventDefault(); if(video.paused) video.play?.().catch?.(()=>{}); else video.pause(); }
-        else if (focused) { event.preventDefault(); focused.click?.(); }
-        return;
-      }
-      if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(event.key)) return;
-      event.preventDefault(); event.stopImmediatePropagation();
-      if (!controls.includes(focused)){ controls[0]?.focus({preventScroll:true}); return; }
-      const rect=focused.getBoundingClientRect(), top=Math.min(...controls.map(el=>el.getBoundingClientRect().top));
-      const topRow=rect.top<=top+Math.max(40,rect.height*.8), row=controls.filter(el=>Math.abs(el.getBoundingClientRect().top-rect.top)<Math.max(30,rect.height*.7));
-      if ((event.key === "ArrowUp" && topRow) || (event.key === "ArrowRight" && topRow && row.indexOf(focused)===row.length-1)) { event.preventDefault(); send("cinenova-player-exit-focus"); return; }
-      const dx=event.key==="ArrowLeft"?-1:event.key==="ArrowRight"?1:0, dy=event.key==="ArrowUp"?-1:event.key==="ArrowDown"?1:0, cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
-      const next=controls.filter(el=>el!==focused).map(el=>{const r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,p=dx?(x-cx)*dx:(y-cy)*dy,c=dx?Math.abs(y-cy):Math.abs(x-cx);return {el,score:p+c*1.5,p};}).filter(x=>x.p>4).sort((a,b)=>a.score-b.score)[0];
-      if(next){next.el.focus({preventScroll:true});next.el.scrollIntoView?.({block:"nearest",inline:"nearest"});}
+      if (arrows.includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); movePlayerFocus(event.key); return; }
+      if (["Escape", "Backspace", "BrowserBack"].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-exit-player"); return; }
+      if (["Enter", " ", "MediaPlayPause"].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); activatePlayerControl(); }
     }, true);
     let lastFocusedControl = null;
     const observeFrame = frame => {
@@ -162,17 +181,8 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       if (event.data?.type !== "cinenova-player-key") return;
       const key=event.data.key;
       if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Enter"," ","MediaPlayPause"].includes(key)) return;
-      const video = doc.querySelector("video");
-      const target=doc.activeElement||doc.body, menuControl=!!target.closest?.('[role="menu"],[role="listbox"],.dropdown-menu,[class*="language-menu" i]');
-      const focused=target.closest?.('button,a,select,input,[role="button"],[role="menuitem"],[role="option"],[tabindex],[onclick],li,.item');
-      if (video && ["Enter"," ","MediaPlayPause"].includes(key) && !menuControl && !focused) { if(video.paused) video.play?.().catch?.(()=>{}); else video.pause(); }
-      else {
-        const code={ArrowLeft:37,ArrowUp:38,ArrowRight:39,ArrowDown:40,Enter:13," ":32}[key];
-        const input=new doc.defaultView.KeyboardEvent("keydown",{key,code:key === " "?"Space":key,bubbles:true,cancelable:true});
-        try{Object.defineProperty(input,"keyCode",{get:()=>code});Object.defineProperty(input,"which",{get:()=>code});}catch(_){}
-        target.dispatchEvent(input);
-      }
-      if (!video && !["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(key)) doc.querySelectorAll("iframe").forEach(frame=>frame.contentWindow?.postMessage(event.data,"*"));
+      if (arrows.includes(key)) { movePlayerFocus(key); return; }
+      activatePlayerControl();
     });
   };
   install(document);

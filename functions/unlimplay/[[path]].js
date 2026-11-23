@@ -254,6 +254,7 @@ export async function onRequest({ request, params }) {
       try {
         const redirectUrl = new URL(location, upstreamUrl);
         if (redirectUrl.hostname === "unlimplay.com") {
+          if (incomingUrl.searchParams.get("cn_tv") === "1") redirectUrl.searchParams.set("cn_tv", "1");
           responseHeaders.set("Location", proxyOrigin + redirectUrl.pathname + redirectUrl.search + redirectUrl.hash);
         }
       } catch {

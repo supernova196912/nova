@@ -92,11 +92,24 @@ UNLIMPLAY_AD_SCRIPT = """<script data-cinenova-ad-filter>
 UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
 (() => {
   const send = type => { try { window.parent.postMessage({type}, "*"); } catch (_) {} };
+  const sendData = data => { try { window.parent.postMessage(data, "*"); } catch (_) {} };
   const install = doc => {
     if (!doc?.documentElement || doc.documentElement.dataset.cinenovaPlayerBridge) return;
     doc.documentElement.dataset.cinenovaPlayerBridge = "1";
+    let lastTimePost = 0;
+    const postPlayerTime = video => {
+      const now = Date.now();
+      if (now - lastTimePost < 900) return;
+      lastTimePost = now;
+      try { window.parent.postMessage({type:"cinenova-player-time",currentTime:video.currentTime,duration:Number.isFinite(video.duration) ? video.duration : 0},"*"); } catch (_) {}
+    };
+    const bindVideoTime = () => doc.querySelectorAll("video").forEach(video => {
+      if (video.dataset.cinenovaTimeBound) return;
+      video.dataset.cinenovaTimeBound = "1";
+      ["timeupdate","loadedmetadata","durationchange","play","seeked"].forEach(type => video.addEventListener(type, () => postPlayerTime(video)));
+    });
     const style = doc.createElement("style");
-    style.textContent = 'button,a,select,[role="button"],[role="menuitem"],[role="option"],[class*="episode" i],[class*="server" i],[class*="dropdown" i]{opacity:1!important;visibility:visible!important;pointer-events:auto!important}button:focus,a:focus,select:focus,[role="button"]:focus,[role="menuitem"]:focus,[role="option"]:focus,[onclick]:focus,[tabindex]:focus,li:focus{outline:3px solid #74a0ff!important;outline-offset:2px!important;border-radius:8px!important;background-color:rgba(76,130,255,.25)!important}html.cn-hud-hidden [data-cn-hud-control="1"]{opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:opacity .25s ease!important}html.cn-hud-hidden video::-webkit-media-controls,html.cn-hud-hidden video::-webkit-media-controls-enclosure,html.cn-hud-hidden video::-webkit-media-controls-panel{display:none!important;opacity:0!important;visibility:hidden!important;-webkit-appearance:none!important}video::-webkit-media-controls,video::-webkit-media-controls-enclosure,video::-webkit-media-controls-panel,video::-webkit-media-controls-overlay-play-button{display:none!important;-webkit-appearance:none!important}';
+    style.textContent = 'button,a,select,[role="button"],[role="menuitem"],[role="option"],[class*="episode" i],[class*="server" i],[class*="dropdown" i]{opacity:1!important;visibility:visible!important;pointer-events:auto!important}.cn-volume-hidden{display:none!important}button:focus,a:focus,select:focus,[role="button"]:focus,[role="menuitem"]:focus,[role="option"]:focus,[onclick]:focus,[tabindex]:focus,li:focus{outline:3px solid #74a0ff!important;outline-offset:2px!important;border-radius:8px!important;background-color:rgba(76,130,255,.25)!important}html.cn-hud-hidden [data-cn-hud-control="1"]{opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:opacity .25s ease!important}html.cn-hud-hidden video::-webkit-media-controls,html.cn-hud-hidden video::-webkit-media-controls-enclosure,html.cn-hud-hidden video::-webkit-media-controls-panel{display:none!important;opacity:0!important;visibility:hidden!important;-webkit-appearance:none!important}video::-webkit-media-controls,video::-webkit-media-controls-enclosure,video::-webkit-media-controls-panel,video::-webkit-media-controls-overlay-play-button{display:none!important;-webkit-appearance:none!important}';
     (doc.head || doc.documentElement).appendChild(style);
     const controlSelector = 'button,a,select,[role="button"],[role="menuitem"],[role="option"],[onclick],[tabindex],li,.item';
     const menuSelector = '[role="menu"],[role="listbox"],.dropdown-menu,[class*="language-menu" i],[class*="server-menu" i]';
@@ -148,8 +161,12 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       video.removeAttribute("controls");
       if (!video.hasAttribute("controlslist")) video.setAttribute("controlslist","nodownload noplaybackrate noremoteplayback");
     });
+    const hideVolumeControls = () => doc.querySelectorAll(volumeSelector).forEach(el => {
+      const targets=new Set([el,el.closest("button,[role='button'],label,[class*='volume' i],[id*='volume' i],[class*='mute' i],[id*='mute' i]")].filter(Boolean));
+      targets.forEach(target=>target.classList.add("cn-volume-hidden"));
+    });
     const promoteVisibleControls = () => visibleControls().forEach(el => { if (el.tabIndex !== 0) el.tabIndex = 0; });
-    const refreshPlayerControls = () => { hideNativeVideoControls(); promoteVisibleControls(); };
+    const refreshPlayerControls = () => { hideNativeVideoControls(); hideVolumeControls(); promoteVisibleControls(); bindVideoTime(); };
     refreshPlayerControls();
     new MutationObserver(refreshPlayerControls).observe(doc.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["class","style","hidden","aria-hidden","controls"]});
     const view = doc.defaultView;
@@ -220,7 +237,7 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       if (now - lastBackPressAt <= 1400) { lastBackPressAt = 0; send("cinenova-exit-player"); }
       else { lastBackPressAt = now; send("cinenova-player-back-confirmation"); }
     };
-    const hudSelector = 'header,nav,button,a,select,[role="button"],[role="menuitem"],[role="option"],[onclick],[tabindex],li,.item,[class*="control" i],[class*="menu" i],[class*="server" i],[class*="language" i],[class*="episode" i],[class*="toolbar" i],[class*="subtitle" i],[class*="progress" i],[class*="volume" i],[class*="seek" i],[class*="overlay" i],[id*="control" i],[id*="progress" i],[id*="volume" i],[id*="subtitle" i]';
+    const hudSelector = 'header,nav,button,a,select,input,[role="button"],[role="menuitem"],[role="option"],[role="slider"],[role="tab"],[aria-label],[onclick],[tabindex],li,.item,[class*="control" i],[class*="menu" i],[class*="server" i],[class*="language" i],[class*="episode" i],[class*="toolbar" i],[class*="subtitle" i],[class*="progress" i],[class*="volume" i],[class*="seek" i],[class*="overlay" i],[class*="duration" i],[class*="timestamp" i],[id*="control" i],[id*="progress" i],[id*="volume" i],[id*="subtitle" i],[id*="time" i]';
     const collectHudControls = () => [...doc.querySelectorAll(hudSelector)].filter(el => {
       if (el.matches("html,body,iframe,video") || !el.getClientRects().length) return false;
       const style = doc.defaultView.getComputedStyle(el);
@@ -264,7 +281,6 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       if (hudWasHidden) { event.preventDefault(); event.stopImmediatePropagation(); visibleControls()[0]?.focus({preventScroll:true}); return; }
       if (event.key === "Enter" && isSeekbar(doc.activeElement)) { event.preventDefault(); event.stopImmediatePropagation(); seekProgress(doc.activeElement,"Enter"); return; }
       if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && isSeekbar(doc.activeElement)) { event.preventDefault(); event.stopImmediatePropagation(); seekProgress(doc.activeElement, event.key); return; }
-      if ((event.key === "ArrowUp" || event.key === "ArrowDown") && isVolumeControl(doc.activeElement)) { event.preventDefault(); event.stopImmediatePropagation(); adjustVolume(doc.activeElement,event.key); return; }
       if (arrows.includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); movePlayerFocus(event.key); return; }
       if (event.key === "Enter") { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); activatePlayerControl(); }
       else if (event.key === "MediaPlayPause") { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); toggleVideoPlayback(); }
@@ -293,8 +309,12 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
     new MutationObserver(() => doc.querySelectorAll("iframe").forEach(observeFrame)).observe(doc.documentElement, {childList:true,subtree:true});
     view.addEventListener("message", event => {
       if (event.source !== view.parent) {
-        if (event.data?.type === "cinenova-subtitle-options") send("cinenova-subtitle-options");
+        if (event.data?.type === "cinenova-player-time") sendData(event.data);
+        else if (event.data?.type === "cinenova-subtitle-options") send("cinenova-subtitle-options");
         return;
+      }
+      if (event.data?.type === "cinenova-player-context") {
+        doc.querySelectorAll("iframe").forEach(frame=>{try{frame.contentWindow?.postMessage(event.data,"*");}catch(_){}}); return;
       }
       if (event.data?.type === "cinenova-toggle-subtitles") { toggleSubtitles(Boolean(event.data.enabled), event.data.language || "auto"); return; }
       if (event.data?.type === "cinenova-show-controls") {
@@ -324,7 +344,6 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       if (key === "Enter" && isSeekbar(doc.activeElement)) { seekProgress(doc.activeElement,"Enter"); return; }
       if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Enter"," ","MediaPlayPause"].includes(key)) return;
       if ((key === "ArrowLeft" || key === "ArrowRight") && isSeekbar(doc.activeElement)) { seekProgress(doc.activeElement, key); return; }
-      if ((key === "ArrowUp" || key === "ArrowDown") && isVolumeControl(doc.activeElement)) { adjustVolume(doc.activeElement,key); return; }
       if (arrows.includes(key)) { movePlayerFocus(key); return; }
       activatePlayerControl();
     });

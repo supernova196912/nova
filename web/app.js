@@ -470,6 +470,9 @@ function providersHTML(p){
 }
 
 async function detail(type, id){
+  const numericId = String(id).match(/^\d+/)?.[0] || "";
+  if (!numericId) return notFound();
+  id = numericId;
   const t = routeToken;
   app.innerHTML = `<div class="dsk"></div>`;
   const append = ["videos","credits","recommendations","similar","watch/providers","external_ids","keywords", type === "movie" ? "release_dates" : "content_ratings"].join(",");
@@ -595,8 +598,10 @@ function activateDetailTab(key){
   $$(".detail-panel").forEach(panel => { panel.hidden = panel.id !== `panel-${key}`; });
 }
 async function loadSeason(id, n){
+  const numericId = String(id).match(/^\d+/)?.[0] || "";
   const t = routeToken, request = ++episodeRequestToken, box = $("#episodeList");
-  if (!box) return;
+  if (!box || !numericId) return;
+  id = numericId;
   box.innerHTML = '<p class="episode-empty">Cargando capítulos…</p>';
   try{
     const s = await api(`/tv/${id}/season/${n}`);
@@ -634,8 +639,11 @@ function makePlayerContext(type,season,episode,metadata={}){
 }
 function sendPlayerContext(frame){ if(currentPlayerContext) frame?.contentWindow?.postMessage({type:"cinenova-player-context",...currentPlayerContext},"*"); }
 function startDetailPlayback(id, type, season = 1, episode = 1, metadata = {}){
+  const numericId = String(id).match(/^\d+/)?.[0] || "";
+  if (!numericId) return toast("No se pudo identificar este título.");
+  id = numericId;
   lastPlaybackTrigger = document.activeElement;
-  if(currentDetailContext) currentDetailContext.id=String(id);
+  if(currentDetailContext) currentDetailContext.id=id;
   currentPlayerContext=makePlayerContext(type,season,episode,metadata);
   $(".player-next-ep-btn")?.setAttribute("hidden","");
   const overlayPlayback = isNativeApp() || isTvMode;
@@ -760,11 +768,12 @@ function updateNextEpisodeButton(currentTime, duration){
 }
 async function playFollowingEpisode(){
   const next=currentPlayerContext?.next, series=currentDetailContext;
-  if(!next || !series || series.type!=="tv") return toast("No hay otro capítulo disponible.");
+  const numericId = String(series?.id || "").match(/^\d+/)?.[0] || "";
+  if(!next || !series || series.type!=="tv" || !numericId) return toast("No hay otro capítulo disponible.");
   let metadata={name:`Episodio ${next.episode}`,runtime:series.runTime};
-  try{ const season=await api(`/tv/${series.id}/season/${next.season}`), match=season.episodes?.find(item=>Number(item.episode_number)===Number(next.episode)); if(match) metadata={name:match.name||metadata.name,runtime:Number(match.runtime)||metadata.runtime}; }catch(e){}
-  if($("#playSeason")){ $("#playSeason").value=String(next.season); loadSeason(series.id,next.season); }
-  startDetailPlayback(series.id,"tv",next.season,next.episode,metadata);
+  try{ const season=await api(`/tv/${numericId}/season/${next.season}`), match=season.episodes?.find(item=>Number(item.episode_number)===Number(next.episode)); if(match) metadata={name:match.name||metadata.name,runtime:Number(match.runtime)||metadata.runtime}; }catch(e){}
+  if($("#playSeason")){ $("#playSeason").value=String(next.season); loadSeason(numericId,next.season); }
+  startDetailPlayback(numericId,"tv",next.season,next.episode,metadata);
 }
 
 function focusPlayerFrame(frame, autoplay = false){
@@ -1000,8 +1009,8 @@ function router(){
   if (a === "mi-lista") return myList();
   if (LEGAL_PAGES[a]) return legalPage(a);
   if ((a === "movie" || a === "tv") && b){
-    const id = parseInt(b, 10);
-    if (Number.isFinite(id)) return detail(a, id);
+    const numericId = String(parseInt(b, 10) || "").match(/^\d+/)?.[0] || "";
+    if (numericId) return detail(a, numericId);
     return notFound();
   }
   if (a === "person" && b) return person(b);

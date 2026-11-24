@@ -77,7 +77,7 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-player-bridge>
       ["timeupdate","loadedmetadata","durationchange","play","seeked"].forEach(type => video.addEventListener(type, () => postPlayerTime(video)));
     });
     const style = doc.createElement("style");
-    style.textContent = 'button,a,select,[role="button"],[role="menuitem"],[role="option"],[class*="episode" i],[class*="server" i],[class*="dropdown" i]{opacity:1!important;visibility:visible!important;pointer-events:auto!important}.cn-volume-hidden{display:none!important}button:focus,a:focus,select:focus,[role="button"]:focus,[role="menuitem"]:focus,[role="option"]:focus,[onclick]:focus,[tabindex]:focus,li:focus{outline:3px solid #74a0ff!important;outline-offset:2px!important;border-radius:8px!important;background-color:rgba(76,130,255,.25)!important}html.cn-hud-hidden [data-cn-hud-control="1"]{opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:opacity .25s ease!important}html.cn-hud-hidden video::-webkit-media-controls,html.cn-hud-hidden video::-webkit-media-controls-enclosure,html.cn-hud-hidden video::-webkit-media-controls-panel{display:none!important;opacity:0!important;visibility:hidden!important;-webkit-appearance:none!important}video::-webkit-media-controls,video::-webkit-media-controls-enclosure,video::-webkit-media-controls-panel,video::-webkit-media-controls-overlay-play-button{display:none!important;-webkit-appearance:none!important}';
+    style.textContent = 'button,a,select,[role="button"],[role="menuitem"],[role="option"],[class*="episode" i],[class*="server" i],[class*="dropdown" i]{opacity:1!important;visibility:visible!important;pointer-events:auto!important}.cn-volume-hidden:not(video):not(iframe){display:none!important}video,iframe{display:block!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important}button:focus,a:focus,select:focus,[role="button"]:focus,[role="menuitem"]:focus,[role="option"]:focus,[onclick]:focus,[tabindex]:focus,li:focus{outline:3px solid #74a0ff!important;outline-offset:2px!important;border-radius:8px!important;background-color:rgba(76,130,255,.25)!important}html.cn-hud-hidden [data-cn-hud-control="1"]{opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:opacity .25s ease!important}html.cn-hud-hidden video::-webkit-media-controls,html.cn-hud-hidden video::-webkit-media-controls-enclosure,html.cn-hud-hidden video::-webkit-media-controls-panel{display:none!important;opacity:0!important;visibility:hidden!important;-webkit-appearance:none!important}video::-webkit-media-controls,video::-webkit-media-controls-enclosure,video::-webkit-media-controls-panel,video::-webkit-media-controls-overlay-play-button{display:none!important;-webkit-appearance:none!important}';
     (doc.head || doc.documentElement).appendChild(style);
     const controlSelector = 'button,a,select,[role="button"],[role="menuitem"],[role="option"],[onclick],[tabindex],li,.item';
     const menuSelector = '[role="menu"],[role="listbox"],.dropdown-menu,[class*="language-menu" i],[class*="server-menu" i]';
@@ -130,8 +130,8 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-player-bridge>
       if (!video.hasAttribute("controlslist")) video.setAttribute("controlslist","nodownload noplaybackrate noremoteplayback");
     });
     const hideVolumeControls = () => doc.querySelectorAll(volumeSelector).forEach(el => {
-      const targets=new Set([el,el.closest("button,[role='button'],label,[class*='volume' i],[id*='volume' i],[class*='mute' i],[id*='mute' i]")].filter(Boolean));
-      targets.forEach(target=>target.classList.add("cn-volume-hidden"));
+      const owner=el.closest("button,[role='button'],label,input[type='range'],[role='slider']");
+      [el,owner].filter(Boolean).filter(target => !target.matches("video,iframe") && !target.querySelector?.("video,iframe")).forEach(target => target.classList.add("cn-volume-hidden"));
     });
     const promoteVisibleControls = () => visibleControls().forEach(el => { if (el.tabIndex !== 0) el.tabIndex = 0; });
     const refreshPlayerControls = () => { hideNativeVideoControls(); hideVolumeControls(); promoteVisibleControls(); bindVideoTime(); };
@@ -183,12 +183,13 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-player-bridge>
     };
     let subtitlesEnabled = false;
     const toggleSubtitles = (enabled, language = "auto") => {
-      const tracks = [...doc.querySelectorAll("video")].flatMap(video => Array.from(video.textTracks || []).map(track => ({video,track})));
+      let tracks = [];
+      try { tracks = [...doc.querySelectorAll("video")].flatMap(video => Array.from(video.textTracks || []).map(track => ({video,track}))); } catch (_) { tracks = []; }
       if (tracks.length) {
         const preferred = language && language !== "auto"
           ? tracks.find(({track}) => (track.language || "").toLowerCase().startsWith(language.toLowerCase()))
           : tracks.find(({track}) => /^(es|spa|lat)(-|$)/i.test(track.language || "")) || tracks[0];
-        tracks.forEach(item => { item.track.mode = enabled && item === preferred ? "showing" : "disabled"; });
+        tracks.forEach(item => { try { item.track.mode = enabled && item === preferred ? "showing" : "disabled"; } catch (_) {} });
       }
       if (!tracks.length) {
         const selector='[aria-label*="subt" i],[aria-label*="caption" i],[title*="subt" i],[title*="caption" i],.vjs-subs-caps-button,[class*="subtitle" i],[class*="caption" i]';
@@ -379,11 +380,12 @@ function rewriteText(text, contentType, requestUrl) {
 }
 
 function originAllowed(request, env) {
-  const allowed = new Set(["https://nova-2yi.pages.dev", "http://localhost", "https://localhost", "http://127.0.0.1", "https://127.0.0.1", "capacitor://localhost"]);
+  const allowed = new Set(["https://nova-2yi.pages.dev", "http://localhost", "http://localhost:8000", "https://localhost", "http://127.0.0.1", "http://127.0.0.1:8000", "https://127.0.0.1", "capacitor://localhost"]);
   for (const item of (env.CINENOVA_ALLOWED_ORIGINS || "").split(",")) { try { if (item.trim()) allowed.add(new URL(item.trim()).origin); } catch {} }
   const supplied = [request.headers.get("Origin"), request.headers.get("Referer")].filter(Boolean);
   const parsed = supplied.map(value => { try { return new URL(value); } catch { return null; } });
-  return parsed.length > 0 && parsed.every(url => url && (allowed.has(url.origin) || ((url.protocol === "http:" || url.protocol === "https:") && ["localhost", "127.0.0.1"].includes(url.hostname))));
+  if (!parsed.length) return true;
+  return parsed.every(url => url && (allowed.has(url.origin) || ((url.protocol === "http:" || url.protocol === "https:") && ["localhost", "127.0.0.1"].includes(url.hostname))));
 }
 
 export async function onRequest({ request, params, env }) {

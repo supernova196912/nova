@@ -1,7 +1,9 @@
 const DEFAULT_ALLOWED_ORIGINS = new Set([
   "https://nova-2yi.pages.dev",
   "http://127.0.0.1",
+  "http://127.0.0.1:8000",
   "https://127.0.0.1",
+  "http://localhost:8000",
   "https://localhost",
   "http://localhost",
   "capacitor://localhost",
@@ -15,7 +17,8 @@ function originAllowed(request, env) {
   }
   const supplied = [request.headers.get("Origin"), request.headers.get("Referer")].filter(Boolean);
   const parsed = supplied.map((value) => { try { return new URL(value); } catch { return null; } });
-  return parsed.length > 0 && parsed.every((url) => url && (allowed.has(url.origin) || ((url.protocol === "http:" || url.protocol === "https:") && ["localhost", "127.0.0.1"].includes(url.hostname))));
+  if (!parsed.length) return true;
+  return parsed.every((url) => url && (allowed.has(url.origin) || ((url.protocol === "http:" || url.protocol === "https:") && ["localhost", "127.0.0.1"].includes(url.hostname))));
 }
 
 function addCorsHeaders(headers, request, env) {

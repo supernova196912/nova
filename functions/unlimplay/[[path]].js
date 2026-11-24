@@ -138,6 +138,49 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-player-bridge>
     refreshPlayerControls();
     new MutationObserver(refreshPlayerControls).observe(doc.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["class","style","hidden","aria-hidden","controls"]});
     const view = doc.defaultView;
+    const diag = { error: "" };
+    const diagPath = input => {
+      try {
+        const raw = typeof input === "string" ? input : input && input.url ? input.url : "";
+        const url = new URL(raw, view.location.href);
+        return url.pathname + url.search;
+      } catch (_) { return "recurso interno"; }
+    };
+    const diagError = message => {
+      if (!diag.error) diag.error = String(message || "Error de red").slice(0, 180);
+    };
+    const nativeFetch = view.fetch;
+    if (typeof nativeFetch === "function") view.fetch = function(...args) {
+      return nativeFetch.apply(view, args).then(response => {
+        if (response && response.status >= 400) diagError("Error " + response.status + " en " + diagPath(args[0]));
+        return response;
+      }, error => {
+        diagError("Fallo de red en " + diagPath(args[0]) + (error && error.message ? ": " + error.message : ""));
+        throw error;
+      });
+    };
+    const NativeXHR = view.XMLHttpRequest;
+    if (NativeXHR && NativeXHR.prototype) {
+      const originalOpen = NativeXHR.prototype.open, originalSend = NativeXHR.prototype.send;
+      NativeXHR.prototype.open = function(method, url, ...rest) { this.__cnUrl = url; return originalOpen.call(this, method, url, ...rest); };
+      NativeXHR.prototype.send = function(...args) {
+        this.addEventListener("load", () => { if (this.status >= 400) diagError("Error " + this.status + " en " + diagPath(this.__cnUrl)); });
+        this.addEventListener("error", () => diagError("Fallo de red en " + diagPath(this.__cnUrl)));
+        return originalSend.apply(this, args);
+      };
+    }
+    view.addEventListener("error", event => { if (event.message || event.error) diagError(event.message || "Error de JavaScript"); }, true);
+    view.addEventListener("unhandledrejection", event => diagError(event.reason && event.reason.message ? event.reason.message : event.reason || "Promesa rechazada"), true);
+    setTimeout(() => {
+      if (!diag.error || doc.querySelector("[data-cn-diagnostic]")) return;
+      const text = ((doc.body && doc.body.innerText) || "").toLocaleLowerCase("es");
+      if (!text.includes("verificando servidores") && !text.includes("espere")) return;
+      const box = doc.createElement("div");
+      box.setAttribute("data-cn-diagnostic", "1");
+      box.textContent = diag.error;
+      box.style.cssText = "position:fixed;left:24px;bottom:64px;z-index:2147483647;max-width:60vw;padding:8px 12px;border:1px solid #a44;border-radius:8px;background:rgba(20,8,8,.92);color:#fff;font:14px/1.3 sans-serif;pointer-events:none";
+      (doc.body || doc.documentElement).appendChild(box);
+    }, 10000);
     const movePlayerFocus = direction => {
       const controls = visibleControls();
       const active = doc.activeElement || doc.body;
@@ -362,7 +405,8 @@ function rewriteText(text, contentType, requestUrl) {
     .replaceAll("http://unlimplay.com", proxyOrigin)
     .replaceAll("https:\\/\\/unlimplay.com", proxyOrigin.replaceAll("/", "\\/"))
     .replaceAll("http:\\/\\/unlimplay.com", proxyOrigin.replaceAll("/", "\\/"));
-  rewritten = rewritten.replace(/(["'`])\/(?=(?:f\.php|sw-adblock\.js|img\/|cdn-cgi\/))/g, "$1/unlimplay/");
+  rewritten = rewritten.replace(/(["'`])(\\?)\/(?!\/|unlimplay\/)(?=[A-Za-z0-9_.-])/g, (_match, quote, slash) => quote + slash + "/unlimplay/");
+  rewritten = rewritten.replace(/(\burl\(\s*)(["'`]?)(\\?)\/(?!\/|unlimplay\/)(?=[A-Za-z0-9_.-])/gi, (_match, prefix, quote, slash) => prefix + quote + slash + "/unlimplay/");
   rewritten = rewritten.replace(/scope\s*:\s*(["'])\/(["'])/g, "scope: $1/unlimplay/$2");
   const requestURL = new URL(requestUrl);
   const tvPlayer = requestURL.searchParams.get("cn_tv") === "1";
@@ -382,27 +426,50 @@ function rewriteText(text, contentType, requestUrl) {
 function originAllowed(request, env) {
   const allowed = new Set(["https://nova-2yi.pages.dev", "http://localhost", "http://localhost:8000", "https://localhost", "http://127.0.0.1", "http://127.0.0.1:8000", "https://127.0.0.1", "capacitor://localhost"]);
   for (const item of (env.CINENOVA_ALLOWED_ORIGINS || "").split(",")) { try { if (item.trim()) allowed.add(new URL(item.trim()).origin); } catch {} }
-  const supplied = [request.headers.get("Origin"), request.headers.get("Referer")].filter(Boolean);
+  const origin = request.headers.get("Origin") || "";
+  const referer = request.headers.get("Referer") || "";
+  if (!origin && !referer) return true;
+  if (referer.includes("/unlimplay/")) {
+    try { if (!origin || origin === new URL(referer).origin) return true; } catch { /* fall through */ }
+  }
+  const supplied = [origin, referer].filter(Boolean);
   const parsed = supplied.map(value => { try { return new URL(value); } catch { return null; } });
   if (!parsed.length) return true;
   return parsed.every(url => url && (allowed.has(url.origin) || ((url.protocol === "http:" || url.protocol === "https:") && ["localhost", "127.0.0.1"].includes(url.hostname))));
 }
 
+function addCorsHeaders(headers) {
+  const target = headers instanceof Headers ? headers : new Headers(headers);
+  target.set("Access-Control-Allow-Origin", "*");
+  target.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  target.set("Access-Control-Allow-Headers", "*");
+  return target;
+}
+
+function proxied(body, status, headers) {
+  return new Response(body, { status, headers: addCorsHeaders(headers) });
+}
+
+export function onRequestOptions() {
+  const headers = addCorsHeaders({ "Access-Control-Max-Age": "86400" });
+  return new Response(null, { status: 204, headers });
+}
+
 export async function onRequest({ request, params, env }) {
-  if (!originAllowed(request, env)) return new Response("Forbidden", { status: 403 });
+  if (!originAllowed(request, env)) return proxied("Forbidden", 403);
   if (!["GET", "HEAD", "POST"].includes(request.method)) {
-    return new Response("Method not allowed", { status: 405, headers: { Allow: "GET, HEAD, POST", "X-Content-Type-Options": "nosniff" } });
+    return proxied("Method not allowed", 405, { Allow: "GET, HEAD, POST", "X-Content-Type-Options": "nosniff" });
   }
 
   const rawPath = params.path || "";
   const path = Array.isArray(rawPath) ? rawPath.join("/") : String(rawPath);
   if (!path || path.split("/").some(part => part === "..") || !/^[A-Za-z0-9_./-]+$/.test(path)) {
-    return new Response("Invalid UnLimPlay path", { status: 400 });
+    return proxied("Invalid UnLimPlay path", 400);
   }
 
   const incomingUrl = new URL(request.url);
-  if (incomingUrl.search.length > 4096 || [...incomingUrl.searchParams].length > 40 || (Number(request.headers.get("Content-Length")) || 0) > 1048576) return new Response("Invalid request", { status: 400 });
-  if ([...incomingUrl.searchParams].some(([key, value]) => !/^[A-Za-z0-9_.-]{1,64}$/.test(key) || /[\u0000-\u001f]/.test(value))) return new Response("Invalid request", { status: 400 });
+  if (incomingUrl.search.length > 4096 || [...incomingUrl.searchParams].length > 40 || (Number(request.headers.get("Content-Length")) || 0) > 1048576) return proxied("Invalid request", 400);
+  if ([...incomingUrl.searchParams].some(([key, value]) => !/^[A-Za-z0-9_.-]{1,64}$/.test(key) || /[\u0000-\u001f]/.test(value))) return proxied("Invalid request", 400);
   const upstreamUrl = new URL(`https://unlimplay.com/${path}`);
   upstreamUrl.search = incomingUrl.search;
   upstreamUrl.searchParams.delete("cn_tv");
@@ -421,7 +488,7 @@ export async function onRequest({ request, params, env }) {
       body: request.method === "POST" ? request.body : undefined,
       redirect: "manual",
     });
-    const responseHeaders = new Headers(upstream.headers);
+    const responseHeaders = addCorsHeaders(new Headers(upstream.headers));
     responseHeaders.set("X-Content-Type-Options", "nosniff");
     responseHeaders.set("Referrer-Policy", "strict-origin-when-cross-origin");
     responseHeaders.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
@@ -458,6 +525,6 @@ export async function onRequest({ request, params, env }) {
     }
     return new Response(request.method === "HEAD" ? null : upstream.body, { status: upstream.status, headers: responseHeaders });
   } catch {
-    return new Response("UnLimPlay proxy unavailable", { status: 502 });
+    return proxied("UnLimPlay proxy unavailable", 502);
   }
 }

@@ -170,6 +170,49 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
     refreshPlayerControls();
     new MutationObserver(refreshPlayerControls).observe(doc.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["class","style","hidden","aria-hidden","controls"]});
     const view = doc.defaultView;
+    const diag = { error: "" };
+    const diagPath = input => {
+      try {
+        const raw = typeof input === "string" ? input : input && input.url ? input.url : "";
+        const url = new URL(raw, view.location.href);
+        return url.pathname + url.search;
+      } catch (_) { return "recurso interno"; }
+    };
+    const diagError = message => {
+      if (!diag.error) diag.error = String(message || "Error de red").slice(0, 180);
+    };
+    const nativeFetch = view.fetch;
+    if (typeof nativeFetch === "function") view.fetch = function(...args) {
+      return nativeFetch.apply(view, args).then(response => {
+        if (response && response.status >= 400) diagError("Error " + response.status + " en " + diagPath(args[0]));
+        return response;
+      }, error => {
+        diagError("Fallo de red en " + diagPath(args[0]) + (error && error.message ? ": " + error.message : ""));
+        throw error;
+      });
+    };
+    const NativeXHR = view.XMLHttpRequest;
+    if (NativeXHR && NativeXHR.prototype) {
+      const originalOpen = NativeXHR.prototype.open, originalSend = NativeXHR.prototype.send;
+      NativeXHR.prototype.open = function(method, url, ...rest) { this.__cnUrl = url; return originalOpen.call(this, method, url, ...rest); };
+      NativeXHR.prototype.send = function(...args) {
+        this.addEventListener("load", () => { if (this.status >= 400) diagError("Error " + this.status + " en " + diagPath(this.__cnUrl)); });
+        this.addEventListener("error", () => diagError("Fallo de red en " + diagPath(this.__cnUrl)));
+        return originalSend.apply(this, args);
+      };
+    }
+    view.addEventListener("error", event => { if (event.message || event.error) diagError(event.message || "Error de JavaScript"); }, true);
+    view.addEventListener("unhandledrejection", event => diagError(event.reason && event.reason.message ? event.reason.message : event.reason || "Promesa rechazada"), true);
+    setTimeout(() => {
+      if (!diag.error || doc.querySelector("[data-cn-diagnostic]")) return;
+      const text = ((doc.body && doc.body.innerText) || "").toLocaleLowerCase("es");
+      if (!text.includes("verificando servidores") && !text.includes("espere")) return;
+      const box = doc.createElement("div");
+      box.setAttribute("data-cn-diagnostic", "1");
+      box.textContent = diag.error;
+      box.style.cssText = "position:fixed;left:24px;bottom:64px;z-index:2147483647;max-width:60vw;padding:8px 12px;border:1px solid #a44;border-radius:8px;background:rgba(20,8,8,.92);color:#fff;font:14px/1.3 sans-serif;pointer-events:none";
+      (doc.body || doc.documentElement).appendChild(box);
+    }, 10000);
     const movePlayerFocus = direction => {
       const controls = visibleControls();
       const active = doc.activeElement || doc.body;
@@ -571,8 +614,10 @@ class PeliskongHandler(SimpleHTTPRequestHandler):
                     text = text.replace("http://unlimplay.com", proxy_origin)
                     text = text.replace("https:\\/\\/unlimplay.com", proxy_origin.replace("/", "\\/"))
                     text = text.replace("http:\\/\\/unlimplay.com", proxy_origin.replace("/", "\\/"))
-                    text = re.sub(r"(?P<q>[\"'`])(?P<slash>\\?/)(?=(?:f\.php|sw-adblock\.js|img/|cdn-cgi/))",
-                                  lambda m: m.group("q") + m.group("slash") + "unlimplay/", text)
+                    text = re.sub(r"(?P<q>[\"'`])(?P<slash>\\?)/(?!/|unlimplay/)(?=[A-Za-z0-9_.-])",
+                                  lambda m: m.group("q") + m.group("slash") + "/unlimplay/", text)
+                    text = re.sub(r"(?P<prefix>\burl\(\s*)(?P<q>[\"'`]?)(?P<slash>\\?)/(?!/|unlimplay/)(?=[A-Za-z0-9_.-])",
+                                  lambda m: m.group("prefix") + m.group("q") + m.group("slash") + "/unlimplay/", text, flags=re.I)
                     text = re.sub(r"scope\s*:\s*([\"'])/([\"'])",
                                   r"scope: \1/unlimplay/\2", text)
                     if "text/html" in content_type.lower() and parsed.path.startswith(UNLIMPLAY_PREFIX + "/"):

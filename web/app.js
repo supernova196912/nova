@@ -18,6 +18,14 @@ const cleanup = [];
 let routeToken = 0;
 let episodeRequestToken = 0;
 const app = $("#app");
+const KIDS_MODE_KEY = "cinenova-kids-mode";
+const KIDS_PIN_KEY = "cinenova-parent-pin";
+const KIDS_MOVIE_GENRES = "16,10751";
+const KIDS_TV_GENRES = "16,10762";
+const KIDS_EXCLUDED_GENRES = "27,80,53,10752";
+let kidsModeEnabled = store.get(KIDS_MODE_KEY, false) === true;
+let currentDetailContext = null;
+let currentEpisodeCount = 1;
 function setSeo(title, description, path = "/", schema = null, robots = "index, follow") {
   document.title = title;
   const desc = $("meta[name='description']"); if (desc) desc.content = description.slice(0, 300);
@@ -34,6 +42,10 @@ let suppressPlayerNativeFullscreenExit = false;
 let lastPlayerBackTime = 0;
 let playerHudTimer = 0;
 let subtitlesEnabled = false;
+let currentPlayerContext = null;
+const playerDebugErrors = [];
+window.addEventListener("error", e => { playerDebugErrors.push(String(e.message || e.error || "Error de script")); }, true);
+window.addEventListener("unhandledrejection", e => { playerDebugErrors.push(String(e.reason?.message || e.reason || "Promesa rechazada")); }, true);
 function isNativeApp(){
   return Boolean((window.Capacitor && window.Capacitor.isNativePlatform?.())
     || (location.hostname === "localhost" && /Android/i.test(navigator.userAgent || "")));
@@ -49,6 +61,8 @@ function updateDeviceMode(){
   isTvMode = forced || tvUa || coarseLarge || nativeTv || (nativeApp && nativeDpadTvMode);
   document.body.classList.toggle("native-app", nativeApp);
   document.body.classList.toggle("tv-mode", isTvMode);
+  document.body.classList.toggle("kids-mode", kidsModeEnabled);
+  const badge = $("#kidsBadge"); if (badge) badge.hidden = !kidsModeEnabled;
 }
 function activateNativeTvMode(){
   if (!isNativeApp()) return false;
@@ -70,10 +84,20 @@ $("#tvCollapse").onclick = () => {
 
 /* ===== API ===== */
 const cache = new Map();
+function kidsApiParams(path, params){
+  if (!kidsModeEnabled) return params;
+  const out = {...params, include_adult:false};
+  const listPath = /\/discover\/|\/trending\/|\/search\/|\/movie\/(popular|top_rated|now_playing|upcoming)|\/tv\/(popular|top_rated|on_the_air|airing_today)/.test(path);
+  if (listPath){
+    out.with_genres = /^\/(tv|discover\/tv|trending\/tv|search\/tv)(\/|$)/.test(path) ? KIDS_TV_GENRES : KIDS_MOVIE_GENRES;
+    out.without_genres = KIDS_EXCLUDED_GENRES;
+  }
+  return out;
+}
 function api(path, params = {}){
   const u = new URL(API_BASE_URL.replace(/\/$/, "") + "/api/tmdb" + path);
   u.searchParams.set("language", CONFIG.LANG);
-  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") u.searchParams.set(k, v);
+  for (const [k, v] of Object.entries(kidsApiParams(path, params))) if (v !== undefined && v !== null && v !== "") u.searchParams.set(k, v);
   const ck = u.toString();
   if (cache.has(ck)) return cache.get(ck);
   const p = fetch(u, { headers: { accept: "application/json" } })
@@ -102,19 +126,21 @@ const typeName = t => t === "tv" ? "Serie" : "Película";
 function fmtDate(s){ if (!s) return "—"; try{ return new Date(s + "T00:00:00").toLocaleDateString("es-AR", {day:"numeric", month:"long", year:"numeric"}); }catch(e){ return s; } }
 function fmtRuntime(m){ if (!m) return ""; const h = Math.floor(m / 60), r = m % 60; return h ? `${h} h ${r} min` : `${r} min`; }
 const money = n => n ? new Intl.NumberFormat("es-AR", {style:"currency", currency:"USD", maximumFractionDigits:0}).format(n) : "—";
-function remember(it, t){ const type = typeOf(it, t); ITEMS.set(type + ":" + it.id, {id:it.id, type, title:titleOf(it), poster_path:it.poster_path, vote_average:it.vote_average, release_date:it.release_date, first_air_date:it.first_air_date}); }
+function remember(it, t){ const type = typeOf(it, t); ITEMS.set(type + ":" + it.id, {id:it.id, type, title:titleOf(it), poster_path:it.poster_path, vote_average:it.vote_average, release_date:it.release_date, first_air_date:it.first_air_date, genre_ids:it.genre_ids || (it.genres || []).map(g => g.id)}); }
 function genreNames(it, t){ const map = GENRES[typeOf(it, t)] || {}; return (it.genre_ids || []).map(id => map[id]).filter(Boolean).slice(0, 3).join(" · "); }
 
 function posterImg(it){ const src = img(it.poster_path, "w342"); return src ? `<img loading="lazy" src="${src}" alt="${esc(titleOf(it))}">` : `<div class="noimg">${esc(titleOf(it))}</div>`; }
 function card(it, t){
   const type = typeOf(it, t);
   if (type === "person") return personCard(it);
-  return `<a class="card" href="#/${type}/${it.id}"><div class="poster">${posterImg(it)}<span class="badge">★ ${score(it.vote_average)}</span><span class="tbadge">${typeName(type)}</span></div><div class="ctitle">${esc(titleOf(it))}</div><div class="cmeta">${year(it) || "—"}</div></a>`;
+  return `<a class="card" href="${detailHref(type,it)}"><div class="poster">${posterImg(it)}<span class="badge">★ ${score(it.vote_average)}</span><span class="tbadge">${typeName(type)}</span></div><div class="ctitle">${esc(titleOf(it))}</div><div class="cmeta">${year(it) || "—"}</div></a>`;
 }
+function slugifyTitle(text){ return String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"") || "titulo"; }
+function detailHref(type,it){ return `#/${type}/${it.id}-${encodeURIComponent(slugifyTitle(titleOf(it)))}`; }
 function personCard(p, sub){
   return `<a class="card person" href="#/person/${p.id}"><div class="poster round">${p.profile_path ? `<img loading="lazy" src="${img(p.profile_path, "w185")}" alt="">` : `<div class="noimg">👤</div>`}</div><div class="ctitle">${esc(p.name)}</div><div class="cmeta">${esc(sub ?? p.character ?? p.known_for_department ?? "")}</div></a>`;
 }
-function topCard(it, i, t){ return `<a class="card" href="#/${typeOf(it, t)}/${it.id}"><span class="num">${i + 1}</span><div class="poster">${posterImg(it)}<span class="badge">★ ${score(it.vote_average)}</span></div></a>`; }
+function topCard(it, i, t){ return `<a class="card" href="${detailHref(typeOf(it,t),it)}"><span class="num">${i + 1}</span><div class="poster">${posterImg(it)}<span class="badge">★ ${score(it.vote_average)}</span></div></a>`; }
 const skel = n => Array.from({length:n}, () => `<div class="card sk"><div class="poster"></div></div>`).join("");
 function staticRow(title, inner, extra = ""){ return inner ? `<section class="block"><div class="rhead"><h2>${esc(title)}</h2>${extra}</div><div class="rwrap"><button class="arr l" tabindex="-1" aria-hidden="true" hidden>‹</button><div class="scroller">${inner}</div><button class="arr r" tabindex="-1" aria-hidden="true" hidden>›</button></div></section>` : ""; }
 
@@ -158,11 +184,19 @@ function rowsHTML(keys){
     return `<section class="row ${L.top ? "top" : ""}" data-list="${k}"><div class="rhead"><h2>${esc(L.t)}</h2><a href="#/lista/${k}">Ver todo ›</a></div><div class="rwrap"><button class="arr l" tabindex="-1" aria-hidden="true" hidden>‹</button><div class="scroller">${skel(L.top ? 6 : 8)}</div><button class="arr r" tabindex="-1" aria-hidden="true" hidden>›</button></div></section>`;
   }).join("");
 }
+function isChildCatalogItem(item, type = item.media_type){
+  if (!item || type === "person" || item.adult) return false;
+  const media = type === "tv" || type === "movie" ? type : item.media_type;
+  if (media !== "tv" && media !== "movie") return false;
+  const genres = item.genre_ids || (item.genres || []).map(g => g.id) || [];
+  const allowed = media === "tv" ? [16, 10762] : [16, 10751];
+  return genres.some(id => allowed.includes(id)) && !genres.some(id => [27, 80, 53, 10752].includes(id));
+}
 async function fillRow(sec){
   const L = LISTS[sec.dataset.list], sc = $(".scroller", sec);
   try{
     const d = await api(L.path, L.p ? L.p() : {});
-    const items = (d.results || []).filter(x => x.poster_path);
+    const items = (d.results || []).filter(x => x.poster_path && (!kidsModeEnabled || isChildCatalogItem(x, L.type)));
     if (!items.length){ sec.remove(); return; }
     sc.innerHTML = L.top ? items.slice(0, 10).map((it, i) => topCard(it, i, L.type)).join("") : items.map(it => card(it, L.type)).join("");
     updateRowArrows(sec);
@@ -201,6 +235,7 @@ function infiniteGrid(grid, path, params, type, filter, onFirstPage){
       total = d.total_pages || 1;
       let items = d.results || [];
       if (filter) items = items.filter(filter);
+      if (kidsModeEnabled) items = items.filter(x => isChildCatalogItem(x, type || x.media_type));
       if (page === 1 && !items.length) grid.innerHTML = '<div class="empty">No se encontraron resultados.</div>';
       grid.insertAdjacentHTML("beforeend", items.map(x => card(x, type)).join(""));
       if (page === 1) onFirstPage?.(grid, items);
@@ -224,16 +259,16 @@ async function home(){
   const t = routeToken;
   document.title = "CINENOVA — Películas y series";
   setSeo("CINENOVA — Películas y series", "Descubre películas, series, tendencias y fichas de entretenimiento con metadatos de TMDB.", "/");
-  app.innerHTML = `<section class="hero" id="hero"></section>` + rowsHTML([
+  app.innerHTML = `<section class="hero" id="hero"></section>` + rowsHTML(kidsModeEnabled ? ["infantiles","infantiles-series","infantiles-animacion","infantiles-dibujos"] : [
     "top-peliculas","top-series","estrenos","netflix","mejor-series","populares-peliculas","anime","doramas",
     "disney","hbo","prime","peliculas-coreanas","argentinas","latinas","proximamente",
     ...GENRE_ROWS.map(g => "genero-" + g[0]),
     "infantiles","infantiles-series","telenovelas","guerra-politica","documentales-series","mejor-peliculas","en-emision"]);
   observeRows(app);
   try{
-    const d = await api("/trending/all/day");
+    const d = await api(kidsModeEnabled ? "/discover/movie" : "/trending/all/day", kidsModeEnabled ? {with_genres:10751,certification_country:"AR","certification.lte":"ATP",include_adult:false,sort_by:"popularity.desc"} : {});
     if (t !== routeToken) return;
-    renderHero(d.results.filter(x => x.backdrop_path && x.media_type !== "person").slice(0, 7));
+    renderHero(d.results.filter(x => x.backdrop_path && x.media_type !== "person" && (!kidsModeEnabled || isChildCatalogItem(x, x.media_type || "movie"))).slice(0, 7));
   }catch(e){
     $("#hero").remove();
     if (isTvMode) requestAnimationFrame(() => $("#tvSidebar [data-r='']")?.focus());
@@ -262,7 +297,7 @@ function renderHero(items){
       s.classList.toggle("on", k === cur);
       s.setAttribute("aria-hidden", String(k !== cur));
     });
-    const it = items[cur], type = it.media_type, fav = isFav(type, it.id);
+    const it = items[cur], type = typeOf(it,"movie"), fav = isFav(type, it.id);
     const ov = (it.overview || "").length > 230 ? it.overview.slice(0, 230).trim() + "…" : (it.overview || "");
     $("#hc").innerHTML = `<div class="hcontent" key="${cur}">
       <div class="hero-meta"><span class="hero-type-pill">${typeName(it)}</span><span class="hero-score">★ ${score(it.vote_average)}</span><span class="hero-year">${year(it)}</span></div>
@@ -270,7 +305,7 @@ function renderHero(items){
       <div class="hgen">${esc(genreNames(it))}</div>
       <p>${esc(ov)}</p>
       <div class="actions">
-        <a class="btn" data-hero-action="watch" href="#/${type}/${it.id}">▶ Ver ahora</a>
+        <a class="btn" data-hero-action="watch" href="${detailHref(type,it)}">▶ Ver ahora</a>
         <button class="btn ghost" data-hero-action="trailer" data-act="trailer" data-type="${type}" data-id="${it.id}">Tráiler</button>
         <button class="btn ghost ${fav ? "fav-on" : ""}" data-hero-action="favorite" data-act="fav" data-type="${type}" data-id="${it.id}">${fav ? "✓ En Mi lista" : "+ Mi lista"}</button>
       </div>
@@ -362,31 +397,26 @@ function listPage(k){
   setSeo(L.t + " — CINENOVA", `Explora ${L.t} en CINENOVA.`, k === "infantiles" ? "/lista/infantiles" : "/" + k);
   const tabs = L.tabs ? `<div class="tabs">${L.tabs.map(x => `<a class="chip ${x === k ? "on" : ""}" href="#/lista/${x}">${esc(LISTS[x].t)}</a>`).join("")}</div>` : "";
   app.innerHTML = `<div class="page"><h1>${esc(L.t)}</h1>${tabs}<div class="grid" id="grid"></div></div>`;
-  infiniteGrid($("#grid"), L.path, L.p ? L.p() : {}, L.type, x => x.poster_path);
+  infiniteGrid($("#grid"), L.path, L.p ? L.p() : {}, L.type, x => x.poster_path && (!kidsModeEnabled || isChildCatalogItem(x,L.type)));
 }
 
 function search(q){
   const query = (q.get("q") || "").trim(), tipo = q.get("tipo") || "multi";
+  const quickLinks = kidsModeEnabled ? [["Películas infantiles","#/lista/infantiles"],["Series infantiles","#/lista/infantiles-series"],["Animación familiar","#/lista/infantiles-animacion"],["Dibujos animados","#/lista/infantiles-dibujos"]] : [["Tendencias","#/lista/top-peliculas"],["Acción","#/lista/genero-28"],["Anime","#/lista/anime"],["Ciencia ficción","#/lista/genero-878"],["Comedia","#/lista/genero-35"],["Terror","#/lista/genero-27"],["Doramas","#/lista/doramas"]];
   document.title = `Buscar: ${query} — CINENOVA`;
   setSeo(query ? `Buscar: ${query} — CINENOVA` : "Buscar — CINENOVA", query ? `Resultados de búsqueda para ${query} en CINENOVA.` : "Busca películas, series y personas.", "/buscar", null, "noindex, follow");
   const form = `<form class="search-page-form" id="searchForm"><input id="searchQuery" type="search" value="${esc(query)}" ${isTvMode ? "readonly" : ""} placeholder="Buscar películas, series o actores" aria-label="Buscar películas, series o actores"><button class="btn primary" type="submit">Buscar</button></form>`;
   if (!query){
-    app.innerHTML = `<div class="page search-page"><h1>Buscar</h1>${form}<p class="muted">Escribí un título, una serie o el nombre de un actor.</p><nav class="search-quick-links" aria-label="Búsquedas rápidas">${[["Tendencias","#/lista/top-peliculas"],["Acción","#/lista/genero-28"],["Anime","#/lista/anime"],["Ciencia ficción","#/lista/genero-878"],["Comedia","#/lista/genero-35"],["Terror","#/lista/genero-27"],["Doramas","#/lista/doramas"]].map(([label,href])=>`<a class="chip" href="${href}">${label}</a>`).join("")}</nav></div>`;
+    app.innerHTML = `<div class="page search-page"><h1>Buscar</h1>${form}<p class="muted">Escribí un título${kidsModeEnabled ? " infantil o familiar" : ", una serie o el nombre de un actor"}.</p><nav class="search-quick-links" aria-label="Búsquedas rápidas">${quickLinks.map(([label,href])=>`<a class="chip" href="${href}">${label}</a>`).join("")}</nav></div>`;
     bindSearchForm();
     return;
   }
   const l = t => `#/buscar?q=${encodeURIComponent(query)}&tipo=${t}`;
   app.innerHTML = `<div class="page search-page"><h1>Resultados para “${esc(query)}”</h1>${form}
-    <div class="tabs">${[["multi","Todo"],["movie","Películas"],["tv","Series"],["person","Personas"]].map(([v, n]) => `<a class="chip ${v === tipo ? "on" : ""}" href="${l(v)}">${n}</a>`).join("")}</div>
+    <div class="tabs">${[["multi","Todo"],["movie","Películas"],["tv","Series"],...(kidsModeEnabled?[]:[["person","Personas"]])].map(([v, n]) => `<a class="chip ${v === tipo ? "on" : ""}" href="${l(v)}">${n}</a>`).join("")}</div>
     <div class="grid" id="grid"></div></div>`;
   bindSearchForm();
-  infiniteGrid($("#grid"), "/search/" + tipo, {query, include_adult:false}, tipo === "multi" ? undefined : tipo, x => x.poster_path || x.profile_path, (grid, items) => {
-    if (isTvMode && items.length) requestAnimationFrame(() => {
-      const first = $(".card", grid);
-      first?.focus({preventScroll:true});
-      first?.scrollIntoView({block:"center", inline:"nearest"});
-    });
-  });
+  infiniteGrid($("#grid"), "/search/" + tipo, {query, include_adult:false}, tipo === "multi" ? undefined : tipo, x => (x.poster_path || x.profile_path) && (!kidsModeEnabled || isChildCatalogItem(x, tipo === "multi" ? x.media_type : tipo)));
 }
 function bindSearchForm(){
   const input = $("#searchQuery");
@@ -399,6 +429,7 @@ function bindSearchForm(){
     const value = $("#searchQuery")?.value.trim();
     if (value) location.hash = `#/buscar?q=${encodeURIComponent(value)}`;
   });
+  if (input) requestAnimationFrame(() => { if (input.isConnected) input.focus({preventScroll:true}); });
 }
 
 function pickVideo(list = []){
@@ -426,6 +457,14 @@ function getCert(d, type){
   }
   return "";
 }
+function isChildApprovedDetail(data,type){
+  if (data.adult) return false;
+  const genres = (data.genres || []).map(g => g.id);
+  const allowed = type === "tv" ? [16, 10762] : [16, 10751];
+  if (!genres.some(id => allowed.includes(id)) || genres.some(id => [27, 80, 53, 10752].includes(id))) return false;
+  const cert = getCert(data, type);
+  return !cert || /^(ATP|G|U|AL|0|TV-Y|TV-Y7|TV-G)$/i.test(cert);
+}
 function providersHTML(p){
   if (!p) return `<p class="muted">No hay información de plataformas para ${esc(REGIONS[REGION] || REGION)}.</p>`;
   const grp = (arr, label) => arr?.length ? `<div class="pgroup"><h4>${label}</h4><div class="plist">${arr.map(x => `<a href="${esc(p.link)}" target="_blank" rel="noopener" class="prov" title="${esc(x.provider_name)}"><img loading="lazy" src="${img(x.logo_path, "w92")}" alt=""><span>${esc(x.provider_name)}</span></a>`).join("")}</div></div>` : "";
@@ -434,6 +473,9 @@ function providersHTML(p){
 }
 
 async function detail(type, id){
+  const numericId = String(id).match(/^\d+/)?.[0] || "";
+  if (!numericId) return notFound();
+  id = numericId;
   const t = routeToken;
   app.innerHTML = `<div class="dsk"></div>`;
   const append = ["videos","credits","recommendations","similar","watch/providers","external_ids","keywords", type === "movie" ? "release_dates" : "content_ratings"].join(",");
@@ -441,14 +483,20 @@ async function detail(type, id){
   try{ d = await api(`/${type}/${id}`, {append_to_response:append, include_video_language:"es,en,null"}); }
   catch(e){ if (t === routeToken) notFound(); return; }
   if (t !== routeToken) return;
+  if (kidsModeEnabled && !isChildApprovedDetail(d,type)){
+    app.innerHTML = `<div class="page"><h1>No disponible en modo infantil</h1><p class="muted">Este título no tiene una clasificación infantil confirmada.</p><a class="btn primary" href="#/">Volver al inicio</a></div>`; return;
+  }
+  currentDetailContext = {id,type,title:titleOf(d),runTime:Number(d.episode_run_time?.[0]) || 45};
   if (!d.overview){ try{ const en = await api(`/${type}/${id}`, {language:"en-US"}); d.overview = en.overview; }catch(e){} }
   if (t !== routeToken) return;
   remember(d, type);
   const title = titleOf(d);
+  const currentParts=parseHash().parts;
+  if (!/-/.test(currentParts[1]||"")) history.replaceState(null,"",`/#/${type}/${id}-${encodeURIComponent(slugifyTitle(title))}`);
   const overlayPlayback = isNativeApp() || isTvMode;
   const tvApp = isNativeApp() && isTvMode;
   document.title = title + " — CINENOVA";
-  const canonicalPath = `/${type === "tv" ? "serie" : "pelicula"}/${encodeURIComponent(id)}`;
+  const canonicalPath = `/${type === "tv" ? "serie" : "pelicula"}/${id}`;
   setSeo(`${title} — CINENOVA`, d.overview || `${title}: ficha, reparto, tráiler y más información.`, canonicalPath, {"@context":"https://schema.org","@type":type === "tv" ? "TVSeries" : "Movie",name:title,description:d.overview || "",image:img(d.poster_path,"w500"),datePublished:d.release_date || d.first_air_date,aggregateRating:d.vote_average ? {"@type":"AggregateRating",ratingValue:d.vote_average,ratingCount:d.vote_count} : undefined});
   const otitle = d.original_title || d.original_name;
   const cert = getCert(d, type);
@@ -473,8 +521,9 @@ async function detail(type, id){
   const defaultOverlayTab = cast ? "reparto" : "similares";
   const vids = (d.videos?.results || []).filter(v => v.site === "YouTube").slice(0, 12)
     .map(v => `<div class="vcard" role="button" tabindex="0" data-act="video" data-key="${esc(v.key)}"><div class="vthumb"><img loading="lazy" src="https://i.ytimg.com/vi/${esc(v.key)}/hqdefault.jpg" alt=""></div><div class="ctitle">${esc(v.name)}</div><div class="cmeta">${esc(v.type)}</div></div>`).join("");
-  const recs = (d.recommendations?.results || []).filter(x => x.poster_path).map(x => card(x, type)).join("");
-  const sim = (d.similar?.results || []).filter(x => x.poster_path).map(x => card(x, type)).join("");
+  const kidFilter = x => x.poster_path && (!kidsModeEnabled || isChildCatalogItem(x, type));
+  const recs = (d.recommendations?.results || []).filter(kidFilter).map(x => card(x, type)).join("");
+  const sim = (d.similar?.results || []).filter(kidFilter).map(x => card(x, type)).join("");
   const kws = (d.keywords?.keywords || d.keywords?.results || []).slice(0, 20);
   const langName = (() => { try{ return new Intl.DisplayNames(["es"], {type:"language"}).of(d.original_language); }catch(e){ return d.original_language; } })();
   const info = [
@@ -552,13 +601,16 @@ function activateDetailTab(key){
   $$(".detail-panel").forEach(panel => { panel.hidden = panel.id !== `panel-${key}`; });
 }
 async function loadSeason(id, n){
+  const numericId = String(id).match(/^\d+/)?.[0] || "";
   const t = routeToken, request = ++episodeRequestToken, box = $("#episodeList");
-  if (!box) return;
+  if (!box || !numericId) return;
+  id = numericId;
   box.innerHTML = '<p class="episode-empty">Cargando capítulos…</p>';
   try{
     const s = await api(`/tv/${id}/season/${n}`);
     if (t !== routeToken || request !== episodeRequestToken) return;
-    box.innerHTML = (s.episodes || []).map(e => `<button class="episode-card" data-act="play-episode" data-type="tv" data-id="${id}" data-season="${n}" data-episode="${e.episode_number}" data-search="${esc(e.name || "").toLowerCase()}" aria-label="Reproducir temporada ${n}, episodio ${e.episode_number}: ${esc(e.name || "")}">
+    currentEpisodeCount=(s.episodes||[]).length||currentEpisodeCount;
+    box.innerHTML = (s.episodes || []).map(e => `<button class="episode-card" data-act="play-episode" data-type="tv" data-id="${id}" data-season="${n}" data-episode="${e.episode_number}" data-runtime="${Number(e.runtime) || 0}" data-search="${esc(e.name || "").toLowerCase()}" aria-label="Reproducir temporada ${n}, episodio ${e.episode_number}: ${esc(e.name || "")}">
       <span class="episode-thumb">${e.still_path ? `<img loading="lazy" src="${img(e.still_path, "w300")}" alt="">` : '<span class="episode-thumb-fallback"></span>'}</span>
       <span class="episode-meta"><span class="episode-number">E${String(e.episode_number).padStart(2, "0")}</span><strong>${esc(e.name || "Episodio " + e.episode_number)}</strong></span>
     </button>`).join("") || '<p class="episode-empty">No hay capítulos disponibles para esta temporada.</p>';
@@ -576,8 +628,27 @@ function filterEpisodeCards(query){
     empty.hidden = false;
   } else if (empty && cards.length) empty.hidden = true;
 }
-function startDetailPlayback(id, type, season = 1, episode = 1){
+function makePlayerContext(type,season,episode,metadata={}){
+  const base=currentDetailContext || {id:"",type,title:"CINENOVA",runTime:45};
+  if(type!=="tv") return {id:base.id,type,title:base.title,subtitle:"",runTime:0,next:null};
+  const options=$$("#playSeason option"), current=options.findIndex(option=>Number(option.value)===Number(season));
+  const seasonCount=Number(options[current]?.dataset.episodes)||currentEpisodeCount;
+  let next=null;
+  if(Number(episode)<seasonCount) next={season:Number(season),episode:Number(episode)+1};
+  else if(options[current+1]) next={season:Number(options[current+1].value),episode:1};
+  const trigger=lastPlaybackTrigger?.closest?.(".episode-card") || $$(".episode-card").find(card=>Number(card.dataset.season)===Number(season)&&Number(card.dataset.episode)===Number(episode)), name=metadata.name || trigger?.querySelector(".episode-meta strong")?.textContent?.trim() || `Episodio ${episode}`;
+  const runtime=Number(metadata.runtime)||Number(trigger?.dataset.runtime)||base.runTime||45;
+  return {id:base.id,type,title:base.title,subtitle:`${season}x${episode} · ${name}`,runTime:runtime,next};
+}
+function sendPlayerContext(frame){ if(currentPlayerContext) frame?.contentWindow?.postMessage({type:"cinenova-player-context",...currentPlayerContext},"*"); }
+function startDetailPlayback(id, type, season = 1, episode = 1, metadata = {}){
+  const numericId = String(id).match(/^\d+/)?.[0] || "";
+  if (!numericId) return toast("No se pudo identificar este título.");
+  id = numericId;
   lastPlaybackTrigger = document.activeElement;
+  if(currentDetailContext) currentDetailContext.id=id;
+  currentPlayerContext=makePlayerContext(type,season,episode,metadata);
+  $(".player-next-ep-btn")?.setAttribute("hidden","");
   const overlayPlayback = isNativeApp() || isTvMode;
   const path = type === "tv" ? `f/embed/tv/${id}/${season}/${episode}` : `f/embed/movie/${id}`;
   const playerURL = new URL(unlimplayUrl(path), location.href);
@@ -589,8 +660,9 @@ function startDetailPlayback(id, type, season = 1, episode = 1){
     const frame = document.createElement("iframe");
     frame.title = "Reproductor de video"; frame.tabIndex = 0; frame.width = "100%"; frame.height = "100%"; frame.setAttribute("frameborder", "0"); frame.allowFullscreen = true;
     frame.allow = "autoplay; fullscreen; picture-in-picture; encrypted-media; remote-playback"; frame.referrerPolicy = "origin";
-    const loader = createPlayerLoader();
-    frame.addEventListener("load", () => { schedulePlayerLoaderRemoval(loader); focusPlayerFrame(frame, true); showPlayerHud(); }, {once:true});
+    const loader = createPlayerLoader(src, player);
+    frame.addEventListener("load", () => { schedulePlayerLoaderRemoval(loader); sendPlayerContext(frame); focusPlayerFrame(frame, true); showPlayerHud(); }, {once:true});
+    frame.addEventListener("error", () => { playerDebugErrors.push("Error al cargar el iframe: " + src); schedulePlayerLoaderRemoval(loader); showPlayerDebugInfo(player, src); }, {once:true});
     frame.src = src; player.append(loader, frame); createPlayerHud(player, frame); document.body.append(player);
     window.CinenovaTvRemote?.setPlayerFullscreen(true); requestAnimationFrame(() => frame.focus({preventScroll:true})); return;
   }
@@ -600,10 +672,11 @@ function startDetailPlayback(id, type, season = 1, episode = 1){
     frame.dataset.loadedSrc = src;
     if (overlayPlayback){
       const loader = createPlayerLoader(); player.append(loader);
-      frame.addEventListener("load", () => { schedulePlayerLoaderRemoval(loader); focusPlayerFrame(frame, true); }, {once:true});
+      frame.addEventListener("load", () => { sendPlayerContext(frame); schedulePlayerLoaderRemoval(loader); focusPlayerFrame(frame, true); }, {once:true});
     }
     frame.src = src;
   }
+  createPlayerHud(player, frame);
   player.scrollIntoView({behavior:"smooth", block:"start"});
   if (isTvMode){
     player.classList.add("player-fullscreen");
@@ -614,43 +687,49 @@ function startDetailPlayback(id, type, season = 1, episode = 1){
   }
 }
 function createPlayerHud(player, frame){
+  const label=currentPlayerContext?.title ? `${currentPlayerContext.title}${currentPlayerContext.subtitle ? ` · ${currentPlayerContext.subtitle}` : ""}` : player.dataset.title || "";
+  let title=$(".player-now-playing",player);
+  if(!title){ title=document.createElement("div"); title.className="player-now-playing"; title.setAttribute("aria-live","polite"); player.append(title); }
+  title.textContent=label; player.dataset.title=label;
+  let next=$(".player-next-ep-btn",player);
+  if(!next){ next=document.createElement("button"); next.type="button"; next.className="player-next-ep-btn"; next.tabIndex=0; next.hidden=true; next.addEventListener("click",()=>playFollowingEpisode()); player.append(next); }
+  const info=currentPlayerContext?.next;
+  next.textContent=info ? `▶ Siguiente capítulo · ${info.season}x${info.episode}` : "";
+  if(!info) next.hidden=true;
   if (!isTvMode || $(".player-hud", player)) return;
   subtitlesEnabled = false;
   const hud = document.createElement("div"); hud.className = "player-hud";
-  const cc = document.createElement("button"); cc.type = "button"; cc.className = "player-cc-btn"; cc.textContent = "CC"; cc.setAttribute("aria-label", "Opciones de subtítulos: apagados"); cc.setAttribute("aria-haspopup", "menu"); cc.setAttribute("aria-expanded", "false"); cc.dataset.enabled = "false"; cc.tabIndex = 0;
-  const menu = document.createElement("div"); menu.className = "player-cc-menu"; menu.setAttribute("role", "menu"); menu.hidden = true;
-  const options = [
-    {label:"Desactivados", enabled:false, language:""},
-    {label:"Español", enabled:true, language:"es"},
-    {label:"Automático", enabled:true, language:"auto"}
-  ];
-  options.forEach(option => {
-    const item = document.createElement("button"); item.type = "button"; item.className = "player-cc-option"; item.setAttribute("role", "menuitemradio"); item.dataset.enabled = String(option.enabled); item.dataset.language = option.language; item.textContent = option.label; item.tabIndex = -1;
-    item.addEventListener("click", () => {
-      subtitlesEnabled = option.enabled;
-      cc.dataset.enabled = String(option.enabled);
-      cc.setAttribute("aria-label", `Opciones de subtítulos: ${option.label.toLowerCase()}`);
-      menu.querySelectorAll(".player-cc-option").forEach(el => { const selected = el === item; el.classList.toggle("selected", selected); el.setAttribute("aria-checked", String(selected)); });
-      frame.contentWindow?.postMessage({type:"cinenova-toggle-subtitles",enabled:option.enabled,language:option.language}, "*");
-      menu.hidden = true; cc.setAttribute("aria-expanded", "false"); cc.focus({preventScroll:true}); showPlayerHud();
-    });
-    menu.append(item);
-  });
+  hud.append(title);
+  const cc = document.createElement("button"); cc.type="button"; cc.className="player-cc-btn"; cc.textContent="CC"; cc.dataset.enabled="false"; cc.tabIndex=0;
+  cc.setAttribute("aria-label","Subtítulos desactivados. Pulsa Enter para activarlos.");
   cc.addEventListener("click", () => {
-    menu.hidden = !menu.hidden; cc.setAttribute("aria-expanded", String(!menu.hidden)); showPlayerHud();
-    if (!menu.hidden) menu.querySelector(".player-cc-option")?.focus({preventScroll:true});
+    subtitlesEnabled = !subtitlesEnabled;
+    cc.dataset.enabled = String(subtitlesEnabled);
+    cc.textContent = subtitlesEnabled ? "CC ON" : "CC";
+    cc.setAttribute("aria-label", subtitlesEnabled ? "Subtítulos activados. Pulsa Enter para desactivarlos." : "Subtítulos desactivados. Pulsa Enter para activarlos.");
+    frame.contentWindow?.postMessage({type:"cinenova-toggle-subtitles",enabled:subtitlesEnabled,language:"es"}, "*");
+    showPlayerHud();
   });
-  hud.append(cc, menu); player.append(hud);
+  hud.append(cc); player.append(hud);
 }
-function createPlayerLoader(){
+function showPlayerDebugInfo(player, src){
+  if (!player?.isConnected) return;
+  let info = $("#playerDebugInfo", player);
+  if (!info){ info = document.createElement("small"); info.id = "playerDebugInfo"; info.className = "player-debug-info"; player.append(info); }
+  info.hidden = false;
+  const detail = playerDebugErrors.slice(-2).join(" · ");
+  info.textContent = `URL: ${src || "sin URL"}${detail ? " · " + detail : ""}`;
+}
+function createPlayerLoader(src = "", player = null){
   const loader = document.createElement("div");
   loader.className = "player-loader"; loader.setAttribute("aria-live", "polite");
   loader.innerHTML = '<div class="spinner"></div><span>Cargando reproductor…</span>';
-  loader._fallbackTimer = setTimeout(() => removePlayerLoader(loader), 12000);
+  loader._fallbackTimer = setTimeout(() => removePlayerLoader(loader), 4000);
+  loader._debugTimer = setTimeout(() => showPlayerDebugInfo(player, src), 5000);
   return loader;
 }
 function schedulePlayerLoaderRemoval(loader){
-  clearTimeout(loader._fallbackTimer);
+  clearTimeout(loader._fallbackTimer); clearTimeout(loader._hideTimer); clearTimeout(loader._debugTimer);
   loader._hideTimer = setTimeout(() => removePlayerLoader(loader), 600);
 }
 function removePlayerLoader(loader){
@@ -665,9 +744,6 @@ function showPlayerHud(key){
       const hud = $(".player-frame.player-fullscreen .player-hud");
       if (!hud) return;
       if (hud.contains(document.activeElement)) $(".player-frame.player-fullscreen iframe")?.focus({preventScroll:true});
-      const cc = $(".player-frame.player-fullscreen .player-cc-btn"), menu = $(".player-frame.player-fullscreen .player-cc-menu");
-      if (menu) menu.hidden = true;
-      cc?.setAttribute("aria-expanded", "false");
       hud.classList.remove("visible");
     }, 3500);
   }
@@ -679,7 +755,7 @@ function showPlayerHud(key){
 window.cinenovaExitPlayerFullscreen = () => {
   const frame = $(".player-frame.player-fullscreen iframe");
   $$(".player-frame.player-fullscreen").forEach(player => player.classList.remove("player-fullscreen"));
-  $$(".app-player-overlay").forEach(player => { const loader=$(".player-loader",player); if(loader) removePlayerLoader(loader); player.remove(); });
+  $$(".app-player-overlay").forEach(player => { const loader=$(".player-loader",player); if(loader){ clearTimeout(loader._debugTimer); removePlayerLoader(loader); } $("#playerDebugInfo",player)?.remove(); player.remove(); });
   frame?.blur();
   window.CinenovaTvRemote?.setPlayerFullscreen(false);
   if (isTvMode) requestAnimationFrame(() => {
@@ -691,10 +767,27 @@ window.cinenovaExitPlayerFullscreen = () => {
 window.addEventListener("message", event => {
   const type = event.data?.type;
   if (type === "cinenova-exit-player") exitPlayerFullscreen();
+  else if (type === "cinenova-player-time") updateNextEpisodeButton(event.data?.currentTime, event.data?.duration);
   else if (type === "cinenova-player-subtitle-focus") { showPlayerHud(); $(".player-frame.player-fullscreen .player-cc-btn")?.focus({preventScroll:true}); }
   else if (type === "cinenova-player-activity") showPlayerHud();
   else if (type === "cinenova-player-back-confirmation") toast("Presiona Atrás otra vez para salir");
 });
+function updateNextEpisodeButton(currentTime, duration){
+  const button = $(".player-next-ep-btn");
+  if (!button) return;
+  const time = Number(currentTime), total = Number(duration);
+  const show = Boolean(currentPlayerContext?.next) && Number.isFinite(time) && Number.isFinite(total) && total > 300 && time > 0 && total - time <= 90;
+  button.hidden = !show;
+}
+async function playFollowingEpisode(){
+  const next=currentPlayerContext?.next, series=currentDetailContext;
+  const numericId = String(series?.id || "").match(/^\d+/)?.[0] || "";
+  if(!next || !series || series.type!=="tv" || !numericId) return toast("No hay otro capítulo disponible.");
+  let metadata={name:`Episodio ${next.episode}`,runtime:series.runTime};
+  try{ const season=await api(`/tv/${numericId}/season/${next.season}`), match=season.episodes?.find(item=>Number(item.episode_number)===Number(next.episode)); if(match) metadata={name:match.name||metadata.name,runtime:Number(match.runtime)||metadata.runtime}; }catch(e){}
+  if($("#playSeason")){ $("#playSeason").value=String(next.season); loadSeason(numericId,next.season); }
+  startDetailPlayback(numericId,"tv",next.season,next.episode,metadata);
+}
 
 function focusPlayerFrame(frame, autoplay = false){
   try{
@@ -777,16 +870,18 @@ function handleFullscreenPlayerKey(key, player, event){
 }
 function handlePlayerHudKey(key, player, event){
   const hud = $(".player-hud", player), focused = document.activeElement;
+  const nextBtn = $(".player-next-ep-btn:not([hidden])", player);
+  if (nextBtn?.contains(focused)){
+    event?.preventDefault(); event?.stopImmediatePropagation(); showPlayerHud();
+    if (key === "Enter") { nextBtn.click(); return true; }
+    if (key === "ArrowLeft" || key === "ArrowRight") { $(".player-cc-btn", hud)?.focus({preventScroll:true}); return true; }
+    return true;
+  }
   if (!hud?.contains(focused)) return false;
-  const cc = $(".player-cc-btn", hud), menu = $(".player-cc-menu", hud), frame = $("iframe", player);
-  const options = $$(".player-cc-option", menu), index = options.indexOf(focused);
+  const frame = $("iframe", player);
   event?.preventDefault(); event?.stopImmediatePropagation(); showPlayerHud();
-  if (key === "Escape" && !menu.hidden){ menu.hidden = true; cc.setAttribute("aria-expanded", "false"); cc.focus({preventScroll:true}); return true; }
   if (key === "Enter") { focused.click(); return true; }
-  if (focused === cc && key === "ArrowDown") { menu.hidden = false; cc.setAttribute("aria-expanded", "true"); options[0]?.focus({preventScroll:true}); return true; }
-  if (index >= 0 && (key === "ArrowUp" || key === "ArrowDown")) { const next = options[index + (key === "ArrowUp" ? -1 : 1)]; if (next) next.focus({preventScroll:true}); else if (key === "ArrowUp") cc.focus({preventScroll:true}); return true; }
   if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(key)) {
-    if (!menu.hidden) { menu.hidden = true; cc.setAttribute("aria-expanded", "false"); }
     frame?.focus({preventScroll:true}); frame?.contentWindow?.postMessage({type:"cinenova-player-key",key}, "*"); return true;
   }
   return true;
@@ -831,7 +926,7 @@ async function person(id){
   setSeo(`${p.name} — CINENOVA`, p.biography || `Biografía y películas de ${p.name}.`, `/persona/${encodeURIComponent(id)}`);
   const seen = new Set();
   const credits = [...(p.combined_credits?.cast || []), ...(p.combined_credits?.crew || [])]
-    .filter(c => c.poster_path && !seen.has(c.media_type + c.id) && seen.add(c.media_type + c.id))
+    .filter(c => c.poster_path && (!kidsModeEnabled || isChildCatalogItem(c, c.media_type)) && !seen.has(c.media_type + c.id) && seen.add(c.media_type + c.id))
     .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0)).slice(0, 60);
   const age = p.birthday ? Math.floor(((p.deathday ? new Date(p.deathday) : new Date()) - new Date(p.birthday)) / 31557600000) : null;
   app.innerHTML = `<div class="page"><div class="phead">
@@ -864,7 +959,7 @@ function toggleFav(type, id){
 function myList(){
   document.title = "Mi lista — CINENOVA";
   setSeo("Mi lista — CINENOVA", "Tu colección personal de películas y series guardadas.", "/mi-lista", null, "noindex, follow");
-  const l = favs();
+  const l = kidsModeEnabled ? favs().filter(x => isChildCatalogItem(x, x.type)) : favs();
   app.innerHTML = `<div class="page"><h1>Mi lista</h1>${l.length ? `<div class="grid">${l.map(x => card(x, x.type)).join("")}</div>` : `<p class="muted">Todavía no agregaste nada. Usá el botón “+ Mi lista” en cualquier película o serie.</p>`}</div>`;
 }
 function notFound(){ app.innerHTML = `<div class="page"><h1>No encontrado</h1><p class="muted">Esta página no existe. <a href="#/" style="color:var(--accent)">Volver al inicio</a></p></div>`; }
@@ -915,6 +1010,7 @@ function router(){
   document.body.classList.toggle("home-route", !activeRoute);
   $$(`[data-r]`).forEach(a => a.classList.toggle("active", a.dataset.r === activeRoute));
   const [a, b] = parts;
+  if (kidsModeEnabled && a && !(a === "lista" && (b || "").startsWith("infantiles")) && a !== "buscar" && a !== "movie" && a !== "tv") { location.hash = "#/"; return; }
   if (!a) return home();
   if (a === "peliculas") return explore("movie", q);
   if (a === "series") return explore("tv", q);
@@ -925,7 +1021,11 @@ function router(){
   if (a === "buscar") return search(q);
   if (a === "mi-lista") return myList();
   if (LEGAL_PAGES[a]) return legalPage(a);
-  if ((a === "movie" || a === "tv") && b) return detail(a, b);
+  if ((a === "movie" || a === "tv") && b){
+    const numericId = String(parseInt(b, 10) || "").match(/^\d+/)?.[0] || "";
+    if (numericId) return detail(a, numericId);
+    return notFound();
+  }
   if (a === "person" && b) return person(b);
   notFound();
 }
@@ -943,7 +1043,77 @@ function openModal(html, cls = "", locked = false){
   $("#modal").classList.remove("hidden");
   if (!locked) requestAnimationFrame(() => $("#mclose")?.focus({preventScroll:true}));
 }
-function closeModal(){ if (modalLocked) return; $("#modal").classList.add("hidden"); $("#mbody").innerHTML = ""; if (lastModalTrigger?.isConnected) lastModalTrigger.focus({preventScroll:true}); }
+async function codeDigest(value){
+  const data = new TextEncoder().encode(`CINENOVA:${value}`);
+  if (window.crypto?.subtle){ const hash = await crypto.subtle.digest("SHA-256",data); return [...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,"0")).join(""); }
+  return btoa(String.fromCharCode(...data));
+}
+let pinPress = null;
+function setKidsMode(enabled){
+  kidsModeEnabled = enabled;
+  store.set(KIDS_MODE_KEY, enabled);
+  document.body.classList.toggle("kids-mode", enabled);
+  const badge = $("#kidsBadge"); if (badge) badge.hidden = !enabled;
+  cache.clear();
+  closeModal();
+  if (enabled && location.hash !== "#/") location.hash = "#/"; else router();
+}
+function renderSettings(status = ""){
+  pinPress = null;
+  const hasPin = Boolean(store.get(KIDS_PIN_KEY, ""));
+  openModal(`<section class="settings-modal">
+    <h2>Configuración</h2><p class="muted">Preferencias guardadas en este dispositivo.</p>
+    <div class="settings-card"><h3>Modo Infantil</h3>
+      <p class="muted">Muestra solo películas y series aptas para niños. Para volver al catálogo completo se requiere el PIN de 4 dígitos.</p>
+      <button id="kidsToggleBtn" class="btn primary" type="button">${kidsModeEnabled ? "Desactivar modo infantil" : hasPin ? "Activar modo infantil" : "Crear PIN y activar"}</button>
+      <p class="muted" role="status">${kidsModeEnabled ? "Modo infantil activado" : hasPin ? "Modo infantil desactivado · PIN configurado" : "Todavía no hay un PIN configurado"}</p>
+      ${status ? `<p class="muted">${esc(status)}</p>` : ""}
+    </div>
+  </section>`,"settings-modal-shell");
+  $("#kidsToggleBtn")?.addEventListener("click", () => {
+    if (!kidsModeEnabled){ if (!hasPin) renderPinScreen("create"); else setKidsMode(true); }
+    else renderPinScreen("disable");
+  });
+}
+function openSettings(){ renderSettings(); }
+function renderPinScreen(mode){
+  const creating = mode === "create";
+  let value = "", busy = false;
+  openModal(`<section class="settings-modal pin-modal">
+    <h2>${creating ? "Crear PIN de 4 dígitos" : "Ingresá tu PIN"}</h2>
+    <p class="muted">${creating ? "Elegí un código para activar y salir del modo infantil." : "Necesitás el código de adulto para desactivar el modo infantil."}</p>
+    <div id="pinDisplay" class="pin-dots" aria-label="PIN ingresado" aria-live="polite"></div>
+    <div id="pinPad" class="pin-pad">${[1,2,3,4,5,6,7,8,9].map(n => `<button type="button" data-pin="${n}" aria-label="${n}">${n}</button>`).join("")}<button type="button" data-pin="del" aria-label="Borrar">⌫</button><button type="button" data-pin="0" aria-label="0">0</button></div>
+    <p id="pinStatus" class="muted" role="status"></p>
+    <button id="pinCancel" class="btn ghost" type="button">Cancelar</button>
+  </section>`,"settings-modal-shell");
+  const display = $("#pinDisplay"), status = $("#pinStatus");
+  const paint = () => { display.textContent = "●".repeat(value.length) + "○".repeat(4 - value.length); };
+  const press = async digit => {
+    if (busy) return;
+    if (digit === "del"){ value = value.slice(0, -1); paint(); return; }
+    if (!/^\d$/.test(digit) || value.length >= 4) return;
+    value += digit; paint();
+    if (value.length < 4) return;
+    busy = true; status.textContent = "Verificando…";
+    if (creating){ store.set(KIDS_PIN_KEY, await codeDigest(value)); toast("PIN guardado. Modo infantil activado."); setKidsMode(true); }
+    else if ((await codeDigest(value)) === store.get(KIDS_PIN_KEY, "")){ setKidsMode(false); toast("Modo infantil desactivado."); }
+    else { status.textContent = "PIN incorrecto. Intentá de nuevo."; value = ""; paint(); busy = false; }
+  };
+  pinPress = press;
+  $$("#pinPad button").forEach(button => button.addEventListener("click", () => press(button.dataset.pin)));
+  $("#pinCancel").addEventListener("click", () => renderSettings());
+  paint();
+  requestAnimationFrame(() => $("#pinPad button")?.focus({preventScroll:true}));
+}
+document.addEventListener("keydown", e => {
+  if (!pinPress || $("#modal").classList.contains("hidden")) return;
+  if (/^[0-9]$/.test(e.key) || e.key === "Backspace"){
+    e.preventDefault(); e.stopImmediatePropagation();
+    pinPress(/^\d$/.test(e.key) ? e.key : "del");
+  }
+}, true);
+function closeModal(){ if (modalLocked) return; pinPress = null; $("#modal").classList.add("hidden"); $("#mbody").innerHTML = ""; if (lastModalTrigger?.isConnected) lastModalTrigger.focus({preventScroll:true}); }
 function exitPlayerFullscreen(){
   window.cinenovaExitPlayerFullscreen?.();
   if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
@@ -1007,12 +1177,6 @@ window.addEventListener("keydown", suppressFullscreenSpace, true);
 window.addEventListener("keyup", suppressFullscreenSpace, true);
 window.addEventListener("keydown", e => {
   if (!["Escape","Backspace","BrowserBack"].includes(e.key)) lastPlayerBackTime = 0;
-  const playerForHud = $(".player-frame.player-fullscreen"), ccMenu = playerForHud && $(".player-cc-menu", playerForHud);
-  if (e.key === "Escape" && ccMenu && !ccMenu.hidden && $(".player-hud", playerForHud)?.contains(document.activeElement)){
-    e.preventDefault(); e.stopImmediatePropagation(); ccMenu.hidden = true;
-    $(".player-cc-btn", playerForHud)?.setAttribute("aria-expanded", "false");
-    $(".player-cc-btn", playerForHud)?.focus({preventScroll:true}); showPlayerHud(); return;
-  }
   if ($(".player-frame.player-fullscreen")) {
     const keyForEmbed = ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter"," ","MediaPlayPause"].includes(e.key) ? e.key : undefined;
     showPlayerHud(keyForEmbed);
@@ -1036,7 +1200,9 @@ window.addEventListener("keydown", e => {
     (candidate?.el || items[0] || $("#mclose"))?.focus({preventScroll:true}); return;
   }
   if (isTvMode && e.target.matches("#searchQuery") && e.key === "Enter" && e.target.readOnly){
-    e.preventDefault(); e.target.readOnly = false; e.target.blur(); e.target.focus(); e.target.select(); return;
+    e.preventDefault();
+    if(e.target.value.trim()){ e.target.form?.requestSubmit(); return; }
+    e.target.readOnly = false; e.target.blur(); e.target.focus(); e.target.select(); return;
   }
   if (isTvMode && e.target.matches("#searchQuery") && e.target.readOnly && e.key === "ArrowLeft"){
     e.preventDefault(); $("#tvSidebar [data-r='buscar']")?.focus({preventScroll:true}); return;
@@ -1235,6 +1401,7 @@ let toastT;
 function toast(msg){ const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 2200); }
 
 document.addEventListener("click", e => {
+  if (e.target.closest("[data-open-settings],#tvSettings")){ e.preventDefault(); openSettings(); return; }
   const arr = e.target.closest(".arr");
   if (arr){ const sc = arr.parentElement.querySelector(".scroller"); sc.scrollBy({left:(arr.classList.contains("r") ? 1 : -1) * sc.clientWidth * .85}); return; }
   const act = e.target.closest("[data-act]");
@@ -1243,7 +1410,7 @@ document.addEventListener("click", e => {
     if (a === "play-detail"){
       activateDetailTab(act.dataset.tab);
       const season = Number($("#playSeason")?.value || 1), episode = Number($("#playEpisode")?.value || 1);
-      startDetailPlayback(act.dataset.id, act.dataset.type, season, episode);
+      startDetailPlayback(act.dataset.id, act.dataset.type, season, episode, {name:act.closest(".episode-card")?.querySelector(".episode-meta strong")?.textContent?.trim()});
     }
     if (a === "play-current-episode" || a === "play-episode"){
       const season = Number(act.dataset.season || $("#playSeason")?.value || 1);
@@ -1251,7 +1418,7 @@ document.addEventListener("click", e => {
       if ($("#playSeason")) $("#playSeason").value = String(season);
       if ($("#playEpisode")) $("#playEpisode").value = String(episode);
       activateDetailTab("ver");
-      startDetailPlayback(act.dataset.id, "tv", season, episode);
+      startDetailPlayback(act.dataset.id, "tv", season, episode, {name:act.querySelector(".episode-meta strong")?.textContent?.trim(),runtime:Number(act.dataset.runtime)||0});
     }
     if (a === "trailer") playTrailer(act.dataset.type, act.dataset.id);
     if (a === "video") playVideo(act.dataset.key);

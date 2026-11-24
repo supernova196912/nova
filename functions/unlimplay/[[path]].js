@@ -134,6 +134,7 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-player-bridge>
         const cross = dx ? Math.abs(y - cy) : Math.abs(x - cx);
         return {el, score:primary + cross * 1.5, primary};
       }).filter(item => item.primary > 4).sort((a,b) => a.score - b.score)[0]?.el;
+      if (!nextControl && ((direction === "ArrowUp" && topRow) || (direction === "ArrowRight" && topRow))) { send("cinenova-player-exit-focus"); return; }
       nextControl?.focus({preventScroll:true});
     };
     const activatePlayerControl = () => {
@@ -156,6 +157,21 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-player-bridge>
       const video = doc.querySelector("video"); if (!video) return false;
       if (video.paused) video.play?.().catch?.(() => {}); else video.pause();
       return true;
+    };
+    let subtitlesEnabled = false;
+    const toggleSubtitles = enabled => {
+      const tracks = [...doc.querySelectorAll("video")].flatMap(video => Array.from(video.textTracks || []).map(track => ({video,track})));
+      if (tracks.length) {
+        const preferred = tracks.find(({track}) => /^(es|spa|lat)(-|$)/i.test(track.language || "")) || tracks[0];
+        tracks.forEach(item => { item.track.mode = enabled && item === preferred ? "showing" : "disabled"; });
+      }
+      if (!tracks.length) {
+        const selector='[aria-label*="subt" i],[aria-label*="caption" i],[title*="subt" i],[title*="caption" i],.vjs-subs-caps-button,[class*="subtitle" i],[class*="caption" i]';
+        const button=[...doc.querySelectorAll(selector)].find(el => el.getClientRects().length && !el.disabled);
+        if (button && subtitlesEnabled !== enabled) button.click();
+      }
+      subtitlesEnabled = enabled;
+      doc.querySelectorAll("iframe").forEach(frame => { try { frame.contentWindow?.postMessage({type:"cinenova-toggle-subtitles",enabled}, "*"); } catch (_) {} });
     };
     let hudTimer = 0, skipNextForwardedKey = null, lastBackPressAt = 0;
     const backKeys = ["Escape","Backspace","BrowserBack"];
@@ -239,6 +255,7 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-player-bridge>
     new MutationObserver(() => doc.querySelectorAll("iframe").forEach(observeFrame)).observe(doc.documentElement, {childList:true,subtree:true});
     view.addEventListener("message", event => {
       if (event.source !== view.parent) return;
+      if (event.data?.type === "cinenova-toggle-subtitles") { toggleSubtitles(Boolean(event.data.enabled)); return; }
       if (event.data?.type === "cinenova-show-controls") {
         const hudWasHidden = doc.documentElement.classList.contains("cn-hud-hidden");
         wakePlayerHud();

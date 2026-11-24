@@ -32,6 +32,8 @@ let nativeDpadTvMode = false;
 let lastPlaybackTrigger = null;
 let suppressPlayerNativeFullscreenExit = false;
 let lastPlayerBackTime = 0;
+let playerHudTimer = 0;
+let subtitlesEnabled = false;
 function isNativeApp(){
   return Boolean((window.Capacitor && window.Capacitor.isNativePlatform?.())
     || (location.hostname === "localhost" && /Android/i.test(navigator.userAgent || "")));
@@ -53,6 +55,8 @@ function activateNativeTvMode(){
   nativeDpadTvMode = true;
   updateDeviceMode();
   document.body.classList.add("tv-mode");
+  const player = $(".player-frame.player-fullscreen"), frame = player?.querySelector("iframe");
+  if (player && frame) { createPlayerHud(player, frame); showPlayerHud(); }
   return true;
 }
 updateDeviceMode();
@@ -112,7 +116,7 @@ function personCard(p, sub){
 }
 function topCard(it, i, t){ return `<a class="card" href="#/${typeOf(it, t)}/${it.id}"><span class="num">${i + 1}</span><div class="poster">${posterImg(it)}<span class="badge">★ ${score(it.vote_average)}</span></div></a>`; }
 const skel = n => Array.from({length:n}, () => `<div class="card sk"><div class="poster"></div></div>`).join("");
-function staticRow(title, inner, extra = ""){ return inner ? `<section class="block"><div class="rhead"><h2>${esc(title)}</h2>${extra}</div><div class="rwrap"><button class="arr l" tabindex="-1" aria-hidden="true">‹</button><div class="scroller">${inner}</div><button class="arr r" tabindex="-1" aria-hidden="true">›</button></div></section>` : ""; }
+function staticRow(title, inner, extra = ""){ return inner ? `<section class="block"><div class="rhead"><h2>${esc(title)}</h2>${extra}</div><div class="rwrap"><button class="arr l" tabindex="-1" aria-hidden="true" hidden>‹</button><div class="scroller">${inner}</div><button class="arr r" tabindex="-1" aria-hidden="true" hidden>›</button></div></section>` : ""; }
 
 /* ===== LISTAS ===== */
 const today = new Date().toISOString().slice(0, 10);
@@ -151,7 +155,7 @@ GENRE_ROWS.forEach(([g, n]) => LISTS["genero-" + g] = {t:n, type:"movie", path:"
 
 function rowsHTML(keys){
   return keys.map(k => { const L = LISTS[k];
-    return `<section class="row ${L.top ? "top" : ""}" data-list="${k}"><div class="rhead"><h2>${esc(L.t)}</h2><a href="#/lista/${k}">Ver todo ›</a></div><div class="rwrap"><button class="arr l" tabindex="-1" aria-hidden="true">‹</button><div class="scroller">${skel(L.top ? 6 : 8)}</div><button class="arr r" tabindex="-1" aria-hidden="true">›</button></div></section>`;
+    return `<section class="row ${L.top ? "top" : ""}" data-list="${k}"><div class="rhead"><h2>${esc(L.t)}</h2><a href="#/lista/${k}">Ver todo ›</a></div><div class="rwrap"><button class="arr l" tabindex="-1" aria-hidden="true" hidden>‹</button><div class="scroller">${skel(L.top ? 6 : 8)}</div><button class="arr r" tabindex="-1" aria-hidden="true" hidden>›</button></div></section>`;
   }).join("");
 }
 async function fillRow(sec){
@@ -161,12 +165,23 @@ async function fillRow(sec){
     const items = (d.results || []).filter(x => x.poster_path);
     if (!items.length){ sec.remove(); return; }
     sc.innerHTML = L.top ? items.slice(0, 10).map((it, i) => topCard(it, i, L.type)).join("") : items.map(it => card(it, L.type)).join("");
-  }catch(e){ sc.innerHTML = `<div class="err">No se pudo cargar esta sección.</div>`; }
+    updateRowArrows(sec);
+  }catch(e){ sc.innerHTML = `<div class="err">No se pudo cargar esta sección.</div>`; updateRowArrows(sec); }
+}
+function updateRowArrows(sec){
+  const sc = $(".scroller", sec); if (!sc) return;
+  const max = Math.max(0, sc.scrollWidth - sc.clientWidth);
+  const left = $(".arr.l", sec), right = $(".arr.r", sec);
+  if (left) left.hidden = max <= 4 || sc.scrollLeft <= 4;
+  if (right) right.hidden = max <= 4 || sc.scrollLeft >= max - 4;
 }
 function observeRows(root){
   const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting){ io.unobserve(e.target); fillRow(e.target); } }), {rootMargin:"700px"});
   $$("section.row[data-list]", root).forEach(s => io.observe(s));
-  cleanup.push(() => io.disconnect());
+  $$("section.row[data-list] .scroller", root).forEach(sc => sc.addEventListener("scroll", () => updateRowArrows(sc.closest(".row")), {passive:true}));
+  const onResize = () => $$("section.row[data-list]", root).forEach(updateRowArrows);
+  window.addEventListener("resize", onResize, {passive:true});
+  cleanup.push(() => { io.disconnect(); window.removeEventListener("resize", onResize); });
 }
 
 /* ===== GRILLA CON SCROLL INFINITO ===== */
@@ -250,21 +265,19 @@ function renderHero(items){
     const it = items[cur], type = it.media_type, fav = isFav(type, it.id);
     const ov = (it.overview || "").length > 230 ? it.overview.slice(0, 230).trim() + "…" : (it.overview || "");
     $("#hc").innerHTML = `<div class="hcontent" key="${cur}">
-      <div class="hero-meta"><span class="tag">${typeName(type)} ${year(it)}</span><span class="rating">★ ${score(it.vote_average)}</span></div>
+      <div class="hero-meta"><span class="hero-type-pill">${typeName(it)}</span><span class="hero-score">★ ${score(it.vote_average)}</span><span class="hero-year">${year(it)}</span></div>
       <h1>${esc(titleOf(it))}</h1>
       <div class="hgen">${esc(genreNames(it))}</div>
       <p>${esc(ov)}</p>
       <div class="actions">
         <a class="btn" data-hero-action="watch" href="#/${type}/${it.id}">▶ Ver ahora</a>
-        <button class="btn ghost" data-hero-action="trailer" data-act="trailer" data-type="${type}" data-id="${it.id}">🎬 Tráiler</button>
+        <button class="btn ghost" data-hero-action="trailer" data-act="trailer" data-type="${type}" data-id="${it.id}">Tráiler</button>
         <button class="btn ghost ${fav ? "fav-on" : ""}" data-hero-action="favorite" data-act="fav" data-type="${type}" data-id="${it.id}">${fav ? "✓ En Mi lista" : "+ Mi lista"}</button>
       </div>
-    <div class="hero-carousel-controls" aria-label="Controles del carrusel">
-        <button class="hero-arrow" type="button" data-hero-step="-1" aria-label="Destacado anterior">‹</button>
+    <div class="hero-carousel-controls" aria-label="Destacados">
         <div class="hero-indicators hero-thumbnails" role="group" aria-label="Elegir destacado">
-          ${items.map((x, k) => `<button class="hero-thumb ${k === cur ? "active" : ""}" type="button" data-slide="${k}" aria-label="Mostrar ${esc(titleOf(x))}" aria-pressed="${k === cur}"><img loading="lazy" src="${img(x.poster_path, "w185")}" alt=""><span>${esc(titleOf(x))}</span></button>`).join("")}
+          ${items.map((x, k) => `<button class="hero-thumb ${k === cur ? "active" : ""}" type="button" data-slide="${k}" aria-label="Mostrar ${esc(titleOf(x))}" aria-pressed="${k === cur}"><img loading="lazy" src="${img(x.poster_path, "w185")}" alt=""></button>`).join("")}
         </div>
-        <button class="hero-arrow" type="button" data-hero-step="1" aria-label="Siguiente destacado">›</button>
     </div>`;
     if (isTvMode && (oldAction || oldSlide !== undefined)) requestAnimationFrame(() =>
       (oldAction ? $(`#hc [data-hero-action="${oldAction}"]`) : $(`#hc [data-slide="${oldSlide}"]`))?.focus({preventScroll:true})
@@ -509,8 +522,8 @@ async function detail(type, id){
   </nav>
   ${overlayPlayback ? "" : `<section class="detail-panel" id="panel-ver" role="tabpanel">
     <h2 class="player-title">Ver ahora: ${esc(title)}</h2>
-    <div class="player-frame" id="player-${d.id}"><iframe src="about:blank" title="Reproductor de video" tabindex="0" width="100%" height="100%" frameBorder="0" allowFullScreen allow="autoplay; fullscreen; picture-in-picture; encrypted-media; remote-playback" referrerPolicy="origin"></iframe></div>
     ${type === "tv" ? episodeBrowserHTML : ""}
+    <div class="player-frame" id="player-${d.id}"><iframe src="about:blank" title="Reproductor de video" tabindex="0" width="100%" height="100%" frameBorder="0" allowFullScreen allow="autoplay; fullscreen; picture-in-picture; encrypted-media; remote-playback" referrerPolicy="origin"></iframe></div>
   </section>`}
   <section class="detail-panel" id="panel-reparto" role="tabpanel" ${overlayPlayback && defaultOverlayTab === "reparto" ? "" : "hidden"}>${staticRow("Reparto", cast)}${tvApp && crewBits.length ? `<section class="block"><h2>${type === "movie" ? "Dirección y guion" : "Creación"}</h2><div class="crew">${crewBits.join("")}</div></section>` : ""}</section>
   ${overlayPlayback ? "" : `<section class="detail-panel" id="panel-detalles" role="tabpanel" hidden>
@@ -575,8 +588,8 @@ function startDetailPlayback(id, type, season = 1, episode = 1){
     frame.title = "Reproductor de video"; frame.tabIndex = 0; frame.width = "100%"; frame.height = "100%"; frame.setAttribute("frameborder", "0"); frame.allowFullscreen = true;
     frame.allow = "autoplay; fullscreen; picture-in-picture; encrypted-media; remote-playback"; frame.referrerPolicy = "origin";
     const loader = createPlayerLoader();
-    frame.addEventListener("load", () => { schedulePlayerLoaderRemoval(loader); focusPlayerFrame(frame, true); }, {once:true});
-    frame.src = src; player.append(loader, frame); document.body.append(player);
+    frame.addEventListener("load", () => { schedulePlayerLoaderRemoval(loader); focusPlayerFrame(frame, true); showPlayerHud(); }, {once:true});
+    frame.src = src; player.append(loader, frame); createPlayerHud(player, frame); document.body.append(player);
     window.CinenovaTvRemote?.setPlayerFullscreen(true); requestAnimationFrame(() => frame.focus({preventScroll:true})); return;
   }
   const player = document.getElementById(`player-${id}`), frame = player?.querySelector("iframe");
@@ -592,10 +605,27 @@ function startDetailPlayback(id, type, season = 1, episode = 1){
   player.scrollIntoView({behavior:"smooth", block:"start"});
   if (isTvMode){
     player.classList.add("player-fullscreen");
+    createPlayerHud(player, frame);
     showPlayerHud();
     window.CinenovaTvRemote?.setPlayerFullscreen(true);
     requestAnimationFrame(() => frame.focus({preventScroll:true}));
   }
+}
+function createPlayerHud(player, frame){
+  if (!isTvMode || $(".player-hud", player)) return;
+  subtitlesEnabled = false;
+  const hud = document.createElement("div"); hud.className = "player-hud";
+  const cc = document.createElement("button"); cc.type = "button"; cc.className = "player-cc-btn"; cc.textContent = "CC Subtítulos: OFF"; cc.setAttribute("aria-pressed", "false"); cc.tabIndex = 0;
+  const exit = document.createElement("button"); exit.type = "button"; exit.className = "player-exit"; exit.textContent = "← Salir"; exit.tabIndex = 0;
+  cc.addEventListener("click", () => {
+    subtitlesEnabled = !subtitlesEnabled;
+    cc.textContent = `CC Subtítulos: ${subtitlesEnabled ? "ON" : "OFF"}`;
+    cc.setAttribute("aria-pressed", String(subtitlesEnabled));
+    frame.contentWindow?.postMessage({type:"cinenova-toggle-subtitles",enabled:subtitlesEnabled}, "*");
+    showPlayerHud();
+  });
+  exit.addEventListener("click", exitPlayerFullscreen);
+  hud.append(cc, exit); player.append(hud);
 }
 function createPlayerLoader(){
   const loader = document.createElement("div");
@@ -612,7 +642,18 @@ function removePlayerLoader(loader){
   clearTimeout(loader._fallbackTimer); clearTimeout(loader._hideTimer); loader.remove();
 }
 function showPlayerHud(key){
-  $(".player-frame.player-fullscreen iframe")?.contentWindow?.postMessage({type:"cinenova-show-controls",key}, "*");
+  const player = $(".player-frame.player-fullscreen");
+  player?.querySelector(".player-hud")?.classList.add("visible");
+  if (player){
+    clearTimeout(playerHudTimer);
+    playerHudTimer = setTimeout(() => {
+      const hud = $(".player-frame.player-fullscreen .player-hud");
+      if (!hud) return;
+      if (hud.contains(document.activeElement)) $(".player-frame.player-fullscreen iframe")?.focus({preventScroll:true});
+      hud.classList.remove("visible");
+    }, 3500);
+  }
+  player?.querySelector("iframe")?.contentWindow?.postMessage({type:"cinenova-show-controls",key}, "*");
 }
 ["pointermove","mousemove"].forEach(type => document.addEventListener(type, () => {
   if ($(".player-frame.player-fullscreen")) showPlayerHud();
@@ -632,6 +673,7 @@ window.cinenovaExitPlayerFullscreen = () => {
 window.addEventListener("message", event => {
   const type = event.data?.type;
   if (type === "cinenova-exit-player") exitPlayerFullscreen();
+  else if (type === "cinenova-player-exit-focus") { showPlayerHud(); $(".player-frame.player-fullscreen .player-cc-btn")?.focus({preventScroll:true}); }
   else if (type === "cinenova-player-activity") showPlayerHud();
   else if (type === "cinenova-player-back-confirmation") toast("Presiona Atrás otra vez para salir");
 });
@@ -715,6 +757,19 @@ function handleFullscreenPlayerKey(key, player, event){
   frame?.contentWindow?.postMessage({type:"cinenova-player-key", key}, "*");
   return true;
 }
+function handlePlayerHudKey(key, player, event){
+  const hud = $(".player-hud", player), focused = document.activeElement;
+  if (!hud?.contains(focused)) return false;
+  const cc = $(".player-cc-btn", hud), exit = $(".player-exit", hud), frame = $("iframe", player);
+  event?.preventDefault(); event?.stopImmediatePropagation(); showPlayerHud();
+  if (key === "Enter") { focused.click(); return true; }
+  if (key === "ArrowRight" && focused === cc) { exit.focus({preventScroll:true}); return true; }
+  if (key === "ArrowLeft" && focused === exit) { cc.focus({preventScroll:true}); return true; }
+  if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(key)) {
+    frame?.focus({preventScroll:true}); frame?.contentWindow?.postMessage({type:"cinenova-player-key",key}, "*"); return true;
+  }
+  return true;
+}
 window.cinenovaForwardPlayerKey = key => {
   if (!["Escape","Backspace","BrowserBack"].includes(key)) lastPlayerBackTime = 0;
   if (["Escape","Backspace","BrowserBack"].includes(key) && $(".player-frame.player-fullscreen")) return handlePlayerBack();
@@ -722,6 +777,7 @@ window.cinenovaForwardPlayerKey = key => {
   showPlayerHud(keyForEmbed);
   activateNativeTvMode();
   const player = $(".player-frame.player-fullscreen");
+  if (player && handlePlayerHudKey(key, player)) return true;
   if (player && handleFullscreenPlayerKey(key, player)) return true;
   const frame = $(".app-player-overlay iframe, .player-frame.player-fullscreen iframe");
   try{
@@ -835,6 +891,7 @@ function router(){
   const activeRoute = parts[0] === "lista"
     ? ((parts[1] || "").startsWith("infantiles") ? "infantiles" : (parts[1] || "lista"))
     : (parts[0] || "");
+  document.body.classList.toggle("home-route", !activeRoute);
   $$(`[data-r]`).forEach(a => a.classList.toggle("active", a.dataset.r === activeRoute));
   const [a, b] = parts;
   if (!a) return home();
@@ -973,6 +1030,7 @@ window.addEventListener("keydown", e => {
   }
   if (e.key === "Enter" && e.target.matches('[role="button"][tabindex="0"]') && !e.target.matches("button,a")){ e.preventDefault(); e.target.click(); return; }
   const playerOverlay = $(".player-frame.player-fullscreen");
+  if (playerOverlay && handlePlayerHudKey(e.key, playerOverlay, e)) return;
   if (playerOverlay && handleFullscreenPlayerKey(e.key, playerOverlay, e)) return;
   if (!isTvMode || editing || !e.key.startsWith("Arrow")) return;
   const current = document.activeElement;

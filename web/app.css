@@ -98,10 +98,11 @@ section.row{padding:24px 4% 4px}
 .rhead a{font-size:13px;color:var(--muted);white-space:nowrap}.rhead a:hover{color:#fff}
 .rwrap{position:relative}
 .scroller{display:flex;gap:14px;overflow-x:auto;padding:4px 2px 14px;scroll-behavior:smooth;scrollbar-width:thin;scrollbar-color:#33336a transparent}
-.arr{position:absolute;top:0;bottom:14px;width:44px;z-index:4;font-size:34px;background:linear-gradient(90deg,rgba(11,11,41,.9),transparent);opacity:0;transition:.2s}
-.arr.r{right:0;background:linear-gradient(270deg,rgba(11,11,41,.9),transparent)}.arr.l{left:0}
-.rwrap:hover .arr{opacity:1}
-@media(hover:none){.arr{display:none}}
+.scroller,.hero-thumbnails,.episode-list,.detail-tabs,.chips,.plist,.row,.cards,.rail,.cats{scrollbar-width:none!important;-ms-overflow-style:none!important}
+.scroller::-webkit-scrollbar,.hero-thumbnails::-webkit-scrollbar,.episode-list::-webkit-scrollbar,.detail-tabs::-webkit-scrollbar,.chips::-webkit-scrollbar,.plist::-webkit-scrollbar,.row::-webkit-scrollbar,.cards::-webkit-scrollbar,.rail::-webkit-scrollbar,.cats::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
+.arr{position:absolute;top:0;bottom:14px;width:52px;z-index:15;border-radius:0;font-size:24px;color:#fff;opacity:.95;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);background:linear-gradient(90deg,rgba(7,11,22,.88),rgba(7,11,22,.35));transition:opacity .2s}
+.arr.r{right:0;background:linear-gradient(270deg,rgba(7,11,22,.88),rgba(7,11,22,.35))}.arr.l{left:0}
+.arr:hover{opacity:1}.arr[hidden]{display:none!important}
 
 /* CARDS */
 .card{flex:0 0 158px;width:158px;transition:transform .2s;position:relative}

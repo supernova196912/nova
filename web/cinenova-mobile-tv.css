@@ -40,6 +40,30 @@ nav a.active { border-color: var(--accent); }
 .chip { border-color: rgba(162, 185, 220, .15); }
 .empty { padding: 28px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg2); color: var(--muted); }
 
+@media (min-width: 768px) {
+  body.home-route:not(.tv-mode) header {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 30;
+    background: linear-gradient(180deg, rgba(6,10,20,.82) 0%, rgba(6,10,20,0) 100%);
+    border: 0;
+  }
+  body.home-route:not(.tv-mode) #hero.hero { height: 84vh; min-height: 600px; max-height: none; }
+  body.home-route:not(.tv-mode) #hero::after {
+    background: linear-gradient(90deg,rgba(7,11,22,.91) 0%,rgba(7,11,22,.58) 42%,rgba(7,11,22,.08) 75%),linear-gradient(0deg,var(--bg) 0%,rgba(7,11,22,.02) 42%);
+  }
+  body.home-route:not(.tv-mode) #hc .hcontent { left: 5%; right: auto; bottom: 42px; width: min(50%, 680px); max-width: 680px; gap: 12px; }
+  body.home-route:not(.tv-mode) .hero-meta { gap: 9px; }
+  body.home-route:not(.tv-mode) .hero-type-pill { border-radius: 999px; padding: 5px 12px; color: #fff; background: #2563eb; font-size: 11px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; }
+  body.home-route:not(.tv-mode) .hero-score, body.home-route:not(.tv-mode) .hero-year { padding: 5px 10px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; background: rgba(8,13,24,.48); font-size: 12px; font-weight: 700; }
+  body.home-route:not(.tv-mode) #hc .hcontent h1 { max-width: 18ch; font-size: clamp(32px,4vw,56px); line-height: 1.08; }
+  body.home-route:not(.tv-mode) #hc .hcontent p { max-width: 60ch; -webkit-line-clamp: 2; }
+  body.home-route:not(.tv-mode) #hc .hcontent .actions { gap: 12px; margin-top: 8px; }
+  body.home-route:not(.tv-mode) #hc .hcontent .actions .btn:not(.ghost) { border-radius: 999px; padding: 12px 26px; font-weight: 700; }
+  body.home-route:not(.tv-mode) #hc .hero-carousel-controls { position: absolute; right: 4%; bottom: 32px; left: auto; z-index: 5; width: auto; margin: 0; background: transparent; }
+  body.home-route:not(.tv-mode) #hc .hero-thumbnails { display: flex; gap: 12px; max-width: 38vw; overflow: hidden; }
+  body.home-route:not(.tv-mode) #hc .hero-thumb { flex: 0 0 78px; width: 78px; height: auto; aspect-ratio: 2 / 3; border: 2px solid transparent; border-radius: 10px; opacity: .62; transition: all .2s ease; }
+  body.home-route:not(.tv-mode) #hc .hero-thumb.active { border-color: #4c82ff; transform: scale(1.06); opacity: 1; }
+}
+
 /* Portada: indicadores compactos en lugar de una fila de miniaturas. */
 .hero {
   height: 76vh;
@@ -203,6 +227,10 @@ body.native-app .download-app-btn { display: none; }
 @keyframes player-loader-spin { to { transform: rotate(360deg); } }
 .player-frame.player-fullscreen iframe { border-radius: 0; }
 body.native-app .player-frame.player-fullscreen { box-shadow: none; }
+.player-hud { position:absolute; top:24px; right:30px; z-index:270; display:flex; align-items:center; gap:12px; opacity:0; transform:translateY(-8px); pointer-events:none; transition:opacity .2s ease,transform .2s ease; }
+.player-hud.visible,.player-hud:focus-within { opacity:1; transform:none; pointer-events:auto; }
+.player-hud button { pointer-events:auto; min-height:48px; padding:0 18px; border:1px solid rgba(255,255,255,.22); border-radius:999px; background:rgba(7,11,22,.82); color:#fff; font-size:15px; font-weight:750; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+.player-hud button:focus-visible { outline:3px solid #74a0ff; outline-offset:3px; box-shadow:0 0 18px rgba(76,130,255,.55); }
 
 .player-controls {
   align-items: end;
@@ -308,6 +336,8 @@ body.tv-mode .episode-card { min-height: 0; display:flex; flex-direction:column;
 body.tv-mode .episode-card strong { font-size: 13px; }
 body.tv-mode .season-picker select { min-height: 54px; font-size: 18px; }
 body.tv-mode .player-frame.player-fullscreen iframe:focus { outline: 0; outline-offset: 0; transform: none; }
+body.tv-mode .player-hud { top:26px; right:32px; gap:14px; }
+body.tv-mode .player-hud button { min-height:56px; padding:0 22px; font-size:18px; }
 
 /* TV layout refinements */
 body.tv-mode #hero.hero { height:76vh; min-height:540px; max-height:none; }
@@ -368,6 +398,8 @@ body.tv-mode #searchQuery:focus-visible {
 body.tv-mode .detail-tab:focus-visible { outline:3px solid #74a0ff; outline-offset:2px; background:rgba(76,130,255,.26); color:#fff; }
 
 @media (max-width: 767px) {
+  .player-hud { top:12px; right:12px; gap:8px; }
+  .player-hud button { min-height:42px; padding:0 12px; font-size:13px; }
   .episode-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   header {
     min-height: 56px;

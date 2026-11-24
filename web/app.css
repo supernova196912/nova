@@ -56,7 +56,8 @@ body.tv-mode button,body.tv-mode a,body.tv-mode select{transition:transform .12s
 /* HEADER */
 header{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:24px;padding:12px 4%;background:rgba(11,11,41,.93);backdrop-filter:blur(8px);border-bottom:1px solid rgba(255,255,255,.05)}
 .logo{font-weight:900;font-size:23px;letter-spacing:2px;white-space:nowrap}.logo span{color:var(--accent)}
-nav{display:flex;gap:18px;font-size:14.5px;color:var(--muted);overflow-x:auto;scrollbar-width:none}
+nav{display:flex;gap:18px;font-size:14.5px;color:var(--muted);overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+nav::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
 nav::-webkit-scrollbar{display:none}
 nav a{white-space:nowrap;padding:4px 0;border-bottom:2px solid transparent}
 nav a:hover{color:#fff}nav a.active{color:#fff;border-color:var(--accent)}
@@ -122,6 +123,9 @@ section.row{padding:24px 4% 4px}
 .top .num{font-size:150px;font-weight:900;line-height:.78;color:var(--bg);-webkit-text-stroke:3px #6b6ba8;margin-right:-24px;z-index:1;font-family:Arial Black,Arial,sans-serif;flex:none}
 .top .poster{flex:0 0 140px;width:140px}
 .top .card.sk{flex-basis:160px}
+.top .card{display:block;flex:0 0 166px;width:166px;align-items:initial}
+.top .poster{flex:none;width:100%;height:auto}
+.top .num{position:absolute;left:8px;bottom:5px;z-index:3;margin:0;font-size:54px;line-height:.8;color:rgba(7,13,24,.78);-webkit-text-stroke:1.5px rgba(190,210,245,.88);text-shadow:0 3px 14px rgba(0,0,0,.8)}
 
 /* PAGES */
 .page{padding:28px 4% 10px}

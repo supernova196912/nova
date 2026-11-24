@@ -275,9 +275,11 @@ function renderHero(items){
         <button class="btn ghost ${fav ? "fav-on" : ""}" data-hero-action="favorite" data-act="fav" data-type="${type}" data-id="${it.id}">${fav ? "✓ En Mi lista" : "+ Mi lista"}</button>
       </div>
     <div class="hero-carousel-controls" aria-label="Destacados">
+        <button class="hero-arrow" type="button" data-hero-step="-1" aria-label="Destacado anterior">‹</button>
         <div class="hero-indicators hero-thumbnails" role="group" aria-label="Elegir destacado">
-          ${items.map((x, k) => `<button class="hero-thumb ${k === cur ? "active" : ""}" type="button" data-slide="${k}" aria-label="Mostrar ${esc(titleOf(x))}" aria-pressed="${k === cur}"><img loading="lazy" src="${img(x.poster_path, "w185")}" alt=""></button>`).join("")}
+          ${items.map((x, k) => `<button class="hero-thumb ${k === cur ? "active" : ""}" type="button" data-slide="${k}" aria-label="Mostrar ${esc(titleOf(x))}" aria-pressed="${k === cur}"><img loading="lazy" src="${img(x.poster_path, "w185")}" alt=""><span>${esc(titleOf(x))}</span></button>`).join("")}
         </div>
+        <button class="hero-arrow" type="button" data-hero-step="1" aria-label="Siguiente destacado">›</button>
     </div>`;
     if (isTvMode && (oldAction || oldSlide !== undefined)) requestAnimationFrame(() =>
       (oldAction ? $(`#hc [data-hero-action="${oldAction}"]`) : $(`#hc [data-slide="${oldSlide}"]`))?.focus({preventScroll:true})

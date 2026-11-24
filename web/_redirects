@@ -1,0 +1,14 @@
+/peliculas /index.html 200
+/series /index.html 200
+/tendencias /index.html 200
+/buscar /index.html 200
+/anime /index.html 200
+/doramas /index.html 200
+/mi-lista /index.html 200
+/lista/* /index.html 200
+/pelicula/* /index.html 200
+/serie/* /index.html 200
+/terminos /index.html 200
+/privacidad /index.html 200
+/dmca /index.html 200
+/contacto /index.html 200

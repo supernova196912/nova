@@ -201,31 +201,6 @@ body.native-app .download-app-btn { display: none; }
   animation: player-loader-spin .9s linear infinite;
 }
 @keyframes player-loader-spin { to { transform: rotate(360deg); } }
-.player-exit {
-  display: none;
-  position: fixed;
-  z-index: 260;
-  top: max(18px, env(safe-area-inset-top));
-  right: 22px;
-  left: auto;
-  min-height: 48px;
-  padding: 0 18px;
-  border: 1px solid rgba(220, 232, 255, .42);
-  border-radius: 12px;
-  background: rgba(8, 13, 24, .88);
-  color: #fff;
-  font-size: 17px;
-  font-weight: 800;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-8px);
-  transition: opacity .18s ease, transform .18s ease;
-}
-.player-frame.player-fullscreen .player-exit { display: inline-flex; align-items: center; justify-content: center; }
-.player-exit.visible, .player-exit:focus-visible { opacity: 1; pointer-events: auto; transform: none; }
-body.tv-mode .player-exit { opacity: 0; pointer-events: none; transform: translateY(-8px); }
-body.tv-mode .player-exit.visible, body.tv-mode .player-exit:focus { opacity: 1; pointer-events: auto; transform: none; }
-body.tv-mode .player-exit:focus-visible { background: #2455df; outline: 3px solid #74a0ff; outline-offset: 4px; transform: scale(1.06); box-shadow: 0 0 22px rgba(76,130,255,.6); }
 .player-frame.player-fullscreen iframe { border-radius: 0; }
 body.native-app .player-frame.player-fullscreen { box-shadow: none; }
 
@@ -317,7 +292,7 @@ body.native-app .player-frame.player-fullscreen { box-shadow: none; }
 
 body.tv-mode #tvSidebar { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #354967 transparent; }
 body.tv-mode #tvCollapse { display: none; }
-body.tv-mode .tv-link { min-height: 54px; font-size: 16px; }
+body.tv-mode .tv-link { min-height: 44px; font-size: 15px; }
 body.tv-mode .tv-link:focus-visible { outline: 2px solid rgba(145,178,255,.55); outline-offset: 1px; }
 body.tv-mode header { display: none; }
 body.tv-mode .detail-tabs { top: 0; }

@@ -18,11 +18,20 @@ const cleanup = [];
 let routeToken = 0;
 let episodeRequestToken = 0;
 const app = $("#app");
+function setSeo(title, description, path = "/", schema = null, robots = "index, follow") {
+  document.title = title;
+  const desc = $("meta[name='description']"); if (desc) desc.content = description.slice(0, 300);
+  const robot = $("meta[name='robots']"); if (robot) robot.content = robots;
+  const canonical = $("link[rel='canonical']"); if (canonical) canonical.href = new URL(path, location.origin).href;
+  const ogTitle = $("meta[property='og:title']"); if (ogTitle) ogTitle.content = title;
+  const ogDesc = $("meta[property='og:description']"); if (ogDesc) ogDesc.content = description.slice(0, 300);
+  const ld = $("#structuredData"); if (ld) ld.textContent = JSON.stringify(schema || {"@context":"https://schema.org","@type":"WebSite",name:"CINENOVA",url:location.origin,description, potentialAction:{"@type":"SearchAction",target:location.origin+"/#/buscar?q={search_term_string}","query-input":"required name=search_term_string"}});
+}
 let isTvMode = false;
 let nativeDpadTvMode = false;
 let lastPlaybackTrigger = null;
-let playerExitTimer = 0;
 let suppressPlayerNativeFullscreenExit = false;
+let lastPlayerBackTime = 0;
 function isNativeApp(){
   return Boolean((window.Capacitor && window.Capacitor.isNativePlatform?.())
     || (location.hostname === "localhost" && /Android/i.test(navigator.userAgent || "")));
@@ -129,7 +138,7 @@ const LISTS = {
   "doramas-japoneses": {t:"Doramas japoneses", type:"tv", path:"/discover/tv", p:() => ({with_original_language:"ja", without_genres:16, sort_by:"popularity.desc"}), tabs:["doramas","peliculas-coreanas","doramas-chinos","doramas-japoneses"]},
   "argentinas":        {t:"Cine argentino", type:"movie", path:"/discover/movie", p:() => ({with_origin_country:"AR", sort_by:"popularity.desc"})},
   "latinas":           {t:"Series latinoamericanas", type:"tv", path:"/discover/tv", p:() => ({with_origin_country:"AR|MX|CO|CL|BR", sort_by:"popularity.desc"})},
-  "infantiles":        {t:"Películas infantiles", type:"movie", path:"/discover/movie", p:() => ({with_genres:10751, include_adult:false, sort_by:"popularity.desc"}), tabs:["infantiles","infantiles-series","infantiles-animacion","infantiles-dibujos"]},
+  "infantiles":        {t:"Películas infantiles", type:"movie", path:"/discover/movie", p:() => ({with_genres:10751, include_adult:false, certification_country:"AR", "certification.lte":"ATP", region:"AR", sort_by:"popularity.desc"}), tabs:["infantiles","infantiles-series","infantiles-animacion","infantiles-dibujos"]},
   "infantiles-series": {t:"Series infantiles", type:"tv", path:"/discover/tv", p:() => ({with_genres:10762, include_adult:false, sort_by:"popularity.desc"}), tabs:["infantiles","infantiles-series","infantiles-animacion","infantiles-dibujos"]},
   "infantiles-animacion":{t:"Animación familiar", type:"movie", path:"/discover/movie", p:() => ({with_genres:"16,10751", include_adult:false, sort_by:"popularity.desc"}), tabs:["infantiles","infantiles-series","infantiles-animacion","infantiles-dibujos"]},
   "infantiles-dibujos":{t:"Dibujos animados", type:"tv", path:"/discover/tv", p:() => ({with_genres:"16,10762", include_adult:false, sort_by:"popularity.desc"}), tabs:["infantiles","infantiles-series","infantiles-animacion","infantiles-dibujos"]},
@@ -199,6 +208,7 @@ function infiniteGrid(grid, path, params, type, filter, onFirstPage){
 async function home(){
   const t = routeToken;
   document.title = "CINENOVA — Películas y series";
+  setSeo("CINENOVA — Películas y series", "Descubre películas, series, tendencias y fichas de entretenimiento con metadatos de TMDB.", "/");
   app.innerHTML = `<section class="hero" id="hero"></section>` + rowsHTML([
     "top-peliculas","top-series","estrenos","netflix","mejor-series","populares-peliculas","anime","doramas",
     "disney","hbo","prime","peliculas-coreanas","argentinas","latinas","proximamente",
@@ -289,6 +299,7 @@ function renderHero(items){
 function explore(type, q){
   const label = type === "movie" ? "Películas" : "Series";
   document.title = label + " — CINENOVA";
+  setSeo(label + " — CINENOVA", `Explora películas y series, filtra por género, idioma y año.`, type === "movie" ? "/peliculas" : "/series");
   const genre = q.get("genero") || "", yr = q.get("anio") || "", sort = q.get("orden") || "popularity.desc", lang = q.get("idioma") || "";
   const dateKey = type === "movie" ? "primary_release_date" : "first_air_date";
   const sorts = [["popularity.desc","Más populares"],["vote_average.desc","Mejor valoradas"],[dateKey + ".desc","Más recientes"],["vote_count.desc","Más votadas"]];
@@ -317,6 +328,7 @@ function explore(type, q){
 
 function trending(q){
   document.title = "Tendencias — CINENOVA";
+  setSeo("Tendencias — CINENOVA", "Consulta las películas y series más populares del momento.", "/tendencias");
   const win = q.get("periodo") === "semana" ? "week" : "day";
   const media = ["movie","tv"].includes(q.get("tipo")) ? q.get("tipo") : "all";
   const l = (p, t) => `#/tendencias?periodo=${p}&tipo=${t}`;
@@ -332,6 +344,7 @@ function listPage(k){
   const L = LISTS[k];
   if (!L) return notFound();
   document.title = L.t + " — CINENOVA";
+  setSeo(L.t + " — CINENOVA", `Explora ${L.t} en CINENOVA.`, k === "infantiles" ? "/lista/infantiles" : "/" + k);
   const tabs = L.tabs ? `<div class="tabs">${L.tabs.map(x => `<a class="chip ${x === k ? "on" : ""}" href="#/lista/${x}">${esc(LISTS[x].t)}</a>`).join("")}</div>` : "";
   app.innerHTML = `<div class="page"><h1>${esc(L.t)}</h1>${tabs}<div class="grid" id="grid"></div></div>`;
   infiniteGrid($("#grid"), L.path, L.p ? L.p() : {}, L.type, x => x.poster_path);
@@ -340,6 +353,7 @@ function listPage(k){
 function search(q){
   const query = (q.get("q") || "").trim(), tipo = q.get("tipo") || "multi";
   document.title = `Buscar: ${query} — CINENOVA`;
+  setSeo(query ? `Buscar: ${query} — CINENOVA` : "Buscar — CINENOVA", query ? `Resultados de búsqueda para ${query} en CINENOVA.` : "Busca películas, series y personas.", "/buscar", null, "noindex, follow");
   const form = `<form class="search-page-form" id="searchForm"><input id="searchQuery" type="search" value="${esc(query)}" ${isTvMode ? "readonly" : ""} placeholder="Buscar películas, series o actores" aria-label="Buscar películas, series o actores"><button class="btn primary" type="submit">Buscar</button></form>`;
   if (!query){
     app.innerHTML = `<div class="page search-page"><h1>Buscar</h1>${form}<p class="muted">Escribí un título, una serie o el nombre de un actor.</p><nav class="search-quick-links" aria-label="Búsquedas rápidas">${[["Tendencias","#/lista/top-peliculas"],["Acción","#/lista/genero-28"],["Anime","#/lista/anime"],["Ciencia ficción","#/lista/genero-878"],["Comedia","#/lista/genero-35"],["Terror","#/lista/genero-27"],["Doramas","#/lista/doramas"]].map(([label,href])=>`<a class="chip" href="${href}">${label}</a>`).join("")}</nav></div>`;
@@ -419,6 +433,8 @@ async function detail(type, id){
   const overlayPlayback = isNativeApp() || isTvMode;
   const tvApp = isNativeApp() && isTvMode;
   document.title = title + " — CINENOVA";
+  const canonicalPath = `/${type === "tv" ? "serie" : "pelicula"}/${encodeURIComponent(id)}`;
+  setSeo(`${title} — CINENOVA`, d.overview || `${title}: ficha, reparto, tráiler y más información.`, canonicalPath, {"@context":"https://schema.org","@type":type === "tv" ? "TVSeries" : "Movie",name:title,description:d.overview || "",image:img(d.poster_path,"w500"),datePublished:d.release_date || d.first_air_date,aggregateRating:d.vote_average ? {"@type":"AggregateRating",ratingValue:d.vote_average,ratingCount:d.vote_count} : undefined});
   const otitle = d.original_title || d.original_name;
   const cert = getCert(d, type);
   const trailer = pickVideo(d.videos?.results);
@@ -462,8 +478,8 @@ async function detail(type, id){
   const initialSeasonNumber = initialSeason?.season_number || 1;
   const initialEpisodeCount = initialSeason?.episode_count || 1;
   const episodeBrowserHTML = type === "tv" ? `<section class="episode-browser ${overlayPlayback ? "episode-browser-app" : ""}" aria-label="Capítulos de la serie">
-      <div class="episode-browser-head"><div><h3>Episodios</h3><p id="episodeSeasonLabel">Temporada ${initialSeasonNumber} · Elegí un capítulo para reproducir.</p></div>
-        <label class="season-picker">Temporada<select id="playSeason">${seasonList.map(s => `<option value="${s.season_number}" data-episodes="${s.episode_count}" ${s.season_number === initialSeasonNumber ? "selected" : ""}>${esc(s.name)}</option>`).join("") || '<option value="1" data-episodes="1">Temporada 1</option>'}</select></label>
+      <div class="episode-browser-head"><label class="season-picker">Temporada<select id="playSeason">${seasonList.map(s => `<option value="${s.season_number}" data-episodes="${s.episode_count}" ${s.season_number === initialSeasonNumber ? "selected" : ""}>${esc(s.name)}</option>`).join("") || '<option value="1" data-episodes="1">Temporada 1</option>'}</select></label>
+        <div><h3>Episodios</h3><p id="episodeSeasonLabel">Temporada ${initialSeasonNumber} · Elegí un capítulo para reproducir.</p></div>
       </div><div class="episode-list" id="episodeList" aria-live="polite"></div></section>` : "";
 
   app.innerHTML = `
@@ -528,8 +544,8 @@ async function loadSeason(id, n){
     const s = await api(`/tv/${id}/season/${n}`);
     if (t !== routeToken || request !== episodeRequestToken) return;
     box.innerHTML = (s.episodes || []).map(e => `<button class="episode-card" data-act="play-episode" data-type="tv" data-id="${id}" data-season="${n}" data-episode="${e.episode_number}" data-search="${esc(e.name || "").toLowerCase()}" aria-label="Reproducir temporada ${n}, episodio ${e.episode_number}: ${esc(e.name || "")}">
-      <span class="episode-thumb">${e.still_path ? `<img loading="lazy" src="${img(e.still_path, "w300")}" alt="">` : '<span class="episode-thumb-fallback"></span>'}<span class="episode-number-badge">E${e.episode_number}</span><span class="episode-play-icon" aria-hidden="true">▶</span></span>
-      <span class="episode-meta"><strong>${esc(e.name || "Episodio " + e.episode_number)}</strong><small>${fmtDate(e.air_date)}${e.runtime ? " · " + e.runtime + " min" : ""}</small></span>
+      <span class="episode-thumb">${e.still_path ? `<img loading="lazy" src="${img(e.still_path, "w300")}" alt="">` : '<span class="episode-thumb-fallback"></span>'}</span>
+      <span class="episode-meta"><strong>${esc(e.name || "Episodio " + e.episode_number)}</strong></span>
     </button>`).join("") || '<p class="episode-empty">No hay capítulos disponibles para esta temporada.</p>';
   }catch(e){ if (t === routeToken && request === episodeRequestToken) box.innerHTML = '<p class="episode-empty">No se pudieron cargar los capítulos. Vuelve a elegir la temporada para reintentar.</p>'; }
 }
@@ -560,7 +576,7 @@ function startDetailPlayback(id, type, season = 1, episode = 1){
     frame.allow = "autoplay; fullscreen; picture-in-picture; encrypted-media; remote-playback"; frame.referrerPolicy = "origin";
     const loader = createPlayerLoader();
     frame.addEventListener("load", () => { schedulePlayerLoaderRemoval(loader); focusPlayerFrame(frame, true); }, {once:true});
-    frame.src = src; player.append(loader, frame, createPlayerExitButton()); document.body.append(player);
+    frame.src = src; player.append(loader, frame); document.body.append(player);
     window.CinenovaTvRemote?.setPlayerFullscreen(true); requestAnimationFrame(() => frame.focus({preventScroll:true})); return;
   }
   const player = document.getElementById(`player-${id}`), frame = player?.querySelector("iframe");
@@ -576,7 +592,6 @@ function startDetailPlayback(id, type, season = 1, episode = 1){
   player.scrollIntoView({behavior:"smooth", block:"start"});
   if (isTvMode){
     player.classList.add("player-fullscreen");
-    if (!$(".player-exit", player)) player.append(createPlayerExitButton());
     showPlayerHud();
     window.CinenovaTvRemote?.setPlayerFullscreen(true);
     requestAnimationFrame(() => frame.focus({preventScroll:true}));
@@ -596,27 +611,8 @@ function schedulePlayerLoaderRemoval(loader){
 function removePlayerLoader(loader){
   clearTimeout(loader._fallbackTimer); clearTimeout(loader._hideTimer); loader.remove();
 }
-function createPlayerExitButton(){
-  const button = document.createElement("button");
-  button.type = "button"; button.className = "player-exit"; button.textContent = "← Salir";
-  button.setAttribute("aria-label", "Salir del reproductor");
-  ["keydown","keyup"].forEach(type => button.addEventListener(type, e => {
-    if (e.key === " " || e.code === "Space") { e.preventDefault(); e.stopImmediatePropagation(); }
-  }));
-  button.addEventListener("click", exitPlayerFullscreen);
-  return button;
-}
 function showPlayerHud(key){
-  const button = $(".player-frame.player-fullscreen .player-exit");
-  if (!button) return;
-  button.classList.add("visible");
   $(".player-frame.player-fullscreen iframe")?.contentWindow?.postMessage({type:"cinenova-show-controls",key}, "*");
-  clearTimeout(playerExitTimer);
-  const hide = () => {
-    if (button.matches(":focus")){ playerExitTimer = setTimeout(hide, 3500); return; }
-    button.classList.remove("visible");
-  };
-  playerExitTimer = setTimeout(hide, 3500);
 }
 ["pointermove","mousemove"].forEach(type => document.addEventListener(type, () => {
   if ($(".player-frame.player-fullscreen")) showPlayerHud();
@@ -637,9 +633,7 @@ window.addEventListener("message", event => {
   const type = event.data?.type;
   if (type === "cinenova-exit-player") exitPlayerFullscreen();
   else if (type === "cinenova-player-activity") showPlayerHud();
-  else if (type === "cinenova-player-exit-focus") {
-    showPlayerHud(); requestAnimationFrame(() => $(".player-frame.player-fullscreen .player-exit")?.focus({preventScroll:true}));
-  }
+  else if (type === "cinenova-player-back-confirmation") toast("Presiona Atrás otra vez para salir");
 });
 
 function focusPlayerFrame(frame, autoplay = false){
@@ -663,12 +657,18 @@ function installSameOriginPlayerBridge(doc, win){
   const send = type => { try { win.parent.postMessage({type}, "*"); } catch(e){} };
   const view = doc.defaultView || win;
   const arrows = ["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"];
+  let lastBackPressAt = 0;
   view.addEventListener("keyup", e => { if (arrows.includes(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
   view.addEventListener("keypress", e => { if (arrows.includes(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
   view.addEventListener("keydown", e => {
     if (["Escape","Backspace","BrowserBack"].includes(e.key)){
-      e.preventDefault(); e.stopImmediatePropagation(); send("cinenova-exit-player"); return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      const now = Date.now();
+      if (now - lastBackPressAt <= 1400) { lastBackPressAt = 0; send("cinenova-exit-player"); }
+      else { lastBackPressAt = now; send("cinenova-player-back-confirmation"); }
+      return;
     }
+    lastBackPressAt = 0;
     send("cinenova-player-activity");
     const video = doc.querySelector("video");
     if (["Enter"," ","MediaPlayPause"].includes(e.key)){
@@ -687,8 +687,7 @@ function installSameOriginPlayerBridge(doc, win){
           const top = Math.min(...controls.map(el=>el.getBoundingClientRect().top));
           const topRow = rect.top <= top + Math.max(40, rect.height*.8);
           const row = controls.filter(el=>Math.abs(el.getBoundingClientRect().top-rect.top)<Math.max(30,rect.height*.7));
-          if ((e.key === "ArrowUp" && topRow) || (e.key === "ArrowRight" && topRow && row.indexOf(focused)===row.length-1)) send("cinenova-player-exit-focus");
-          else { const dx=e.key==="ArrowLeft"?-1:e.key==="ArrowRight"?1:0,dy=e.key==="ArrowUp"?-1:e.key==="ArrowDown"?1:0,cx=rect.left+rect.width/2,cy=rect.top+rect.height/2; const next=controls.filter(el=>el!==focused).map(el=>{const r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,p=dx?(x-cx)*dx:(y-cy)*dy,c=dx?Math.abs(y-cy):Math.abs(x-cx);return{el,score:p+c*1.5,p};}).filter(x=>x.p>4).sort((a,b)=>a.score-b.score)[0]; next?.el.focus({preventScroll:true}); next?.el.scrollIntoView?.({block:"nearest",inline:"nearest"}); }
+          { const dx=e.key==="ArrowLeft"?-1:e.key==="ArrowRight"?1:0,dy=e.key==="ArrowUp"?-1:e.key==="ArrowDown"?1:0,cx=rect.left+rect.width/2,cy=rect.top+rect.height/2; const next=controls.filter(el=>el!==focused).map(el=>{const r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,p=dx?(x-cx)*dx:(y-cy)*dy,c=dx?Math.abs(y-cy):Math.abs(x-cx);return{el,score:p+c*1.5,p};}).filter(x=>x.p>4).sort((a,b)=>a.score-b.score)[0]; next?.el.focus({preventScroll:true}); next?.el.scrollIntoView?.({block:"nearest",inline:"nearest"}); }
         }
       }
     }
@@ -710,24 +709,16 @@ function installSameOriginPlayerBridge(doc, win){
 }
 function handleFullscreenPlayerKey(key, player, event){
   if (!player || !["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter"," ","MediaPlayPause"].includes(key)) return false;
-  const frame = $("iframe", player), exitButton = $(".player-exit", player);
-  const onExit = document.activeElement === exitButton;
+  const frame = $("iframe", player);
   event?.preventDefault(); event?.stopImmediatePropagation();
   if (key === " "){ frame?.contentWindow?.postMessage({type:"cinenova-player-key",key:" "}, "*"); return true; }
-  if (onExit){
-    if (key === "Enter"){ exitButton?.click(); return true; }
-    if (key === "ArrowDown" || key === "ArrowLeft"){
-      frame?.focus({preventScroll:true});
-      frame?.contentWindow?.postMessage({type:"cinenova-player-focus"}, "*");
-    }
-    return true;
-  }
   frame?.contentWindow?.postMessage({type:"cinenova-player-key", key}, "*");
   return true;
 }
 window.cinenovaForwardPlayerKey = key => {
-  const keyForEmbed = !document.activeElement?.matches(".player-exit")
-    && ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter"," ","MediaPlayPause"].includes(key) ? key : undefined;
+  if (!["Escape","Backspace","BrowserBack"].includes(key)) lastPlayerBackTime = 0;
+  if (["Escape","Backspace","BrowserBack"].includes(key) && $(".player-frame.player-fullscreen")) return handlePlayerBack();
+  const keyForEmbed = ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter"," ","MediaPlayPause"].includes(key) ? key : undefined;
   showPlayerHud(keyForEmbed);
   activateNativeTvMode();
   const player = $(".player-frame.player-fullscreen");
@@ -760,6 +751,7 @@ async function person(id){
   if (!p.biography){ try{ p.biography = (await api(`/person/${id}`, {language:"en-US"})).biography; }catch(e){} }
   if (t !== routeToken) return;
   document.title = p.name + " — CINENOVA";
+  setSeo(`${p.name} — CINENOVA`, p.biography || `Biografía y películas de ${p.name}.`, `/persona/${encodeURIComponent(id)}`);
   const seen = new Set();
   const credits = [...(p.combined_credits?.cast || []), ...(p.combined_credits?.crew || [])]
     .filter(c => c.poster_path && !seen.has(c.media_type + c.id) && seen.add(c.media_type + c.id))
@@ -794,13 +786,35 @@ function toggleFav(type, id){
 }
 function myList(){
   document.title = "Mi lista — CINENOVA";
+  setSeo("Mi lista — CINENOVA", "Tu colección personal de películas y series guardadas.", "/mi-lista", null, "noindex, follow");
   const l = favs();
   app.innerHTML = `<div class="page"><h1>Mi lista</h1>${l.length ? `<div class="grid">${l.map(x => card(x, x.type)).join("")}</div>` : `<p class="muted">Todavía no agregaste nada. Usá el botón “+ Mi lista” en cualquier película o serie.</p>`}</div>`;
 }
 function notFound(){ app.innerHTML = `<div class="page"><h1>No encontrado</h1><p class="muted">Esta página no existe. <a href="#/" style="color:var(--accent)">Volver al inicio</a></p></div>`; }
 
+const LEGAL_PAGES = {
+  terminos:["Términos de uso", "CINENOVA facilita la consulta de fichas y metadatos de obras audiovisuales. El uso del sitio debe respetar la legislación aplicable y los derechos de terceros. Los enlaces a servicios externos se ofrecen tal como están y cada proveedor establece sus propias condiciones."],
+  privacidad:["Privacidad", "CINENOVA utiliza almacenamiento local del navegador para preferencias como la lista personal. Las solicitudes de metadatos se realizan a TMDB y los enlaces externos pueden aplicar sus propias políticas. No ingreses información sensible en el sitio."],
+  dmca:["DMCA / Aviso legal", "CINENOVA funciona como indexador de metadatos y enlaces externos; no aloja archivos audiovisuales. Los derechos sobre obras y marcas pertenecen a sus titulares. Si representas a un titular y deseas informar sobre una referencia, incluye la obra, URL afectada, acreditación de titularidad y un medio de contacto verificable."],
+  contacto:["Contacto", "Para consultas sobre fichas o avisos de derechos, incluye la URL afectada, una descripción clara de tu solicitud y un medio de contacto verificable. Esta versión no publica una dirección de correo ni almacena mensajes; evita incluir información sensible en el sitio."]
+};
+function legalPage(key){
+  const [title, copy] = LEGAL_PAGES[key];
+  setSeo(`${title} — CINENOVA`, copy, `/${key}`);
+  app.innerHTML = `<article class="page legal-page"><h1>${esc(title)}</h1><p>${esc(copy)}</p><p>Este sitio no almacena ningún archivo en su servidor. Todo el contenido es proporcionado por terceros no afiliados.</p><a class="btn ghost" href="#/">Volver al inicio</a></article>`;
+}
+
 /* ===== ROUTER ===== */
 function parseHash(){ const h = location.hash.slice(1) || "/"; const [p, qs] = h.split("?"); return {parts:p.split("/").filter(Boolean), q:new URLSearchParams(qs || "")}; }
+function hashFromPath(){
+  if (location.hash) return;
+  const p = location.pathname.replace(/^\/+|\/+$/g, "");
+  if (!p) return;
+  const map = {pelicula:"movie", serie:"tv"};
+  const parts = p.split("/");
+  if (map[parts[0]] && parts[1]) history.replaceState(null, "", `/#/${map[parts[0]]}/${encodeURIComponent(parts[1])}`);
+  else if (["peliculas","series","tendencias","buscar","anime","doramas","mi-lista","terminos","privacidad","dmca","contacto"].includes(parts[0]) || parts[0] === "lista") history.replaceState(null, "", `/#/${p}`);
+}
 let currentRouteHash = null;
 const routeTrail = [];
 let skipRouteTrailPush = false;
@@ -832,6 +846,7 @@ function router(){
   if (a === "lista") return listPage(b);
   if (a === "buscar") return search(q);
   if (a === "mi-lista") return myList();
+  if (LEGAL_PAGES[a]) return legalPage(a);
   if ((a === "movie" || a === "tv") && b) return detail(a, b);
   if (a === "person" && b) return person(b);
   notFound();
@@ -855,12 +870,24 @@ function exitPlayerFullscreen(){
   window.cinenovaExitPlayerFullscreen?.();
   if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
 }
+function handlePlayerBack(){
+  const now = Date.now();
+  if (now - lastPlayerBackTime > 1400){
+    lastPlayerBackTime = now;
+    showPlayerHud();
+    toast("Presiona Atrás otra vez para salir");
+    return true;
+  }
+  lastPlayerBackTime = 0;
+  exitPlayerFullscreen();
+  return true;
+}
 function handleAppBack(){
   const now = Date.now();
+  if (!$("#modal").classList.contains("hidden")){ closeModal(); return true; }
+  if (document.fullscreenElement || $(".player-frame.player-fullscreen")) return handlePlayerBack();
   if (now - lastBackTime < 350) return true;
   lastBackTime = now;
-  if (!$("#modal").classList.contains("hidden")){ closeModal(); return true; }
-  if (document.fullscreenElement || $(".player-frame.player-fullscreen")){ exitPlayerFullscreen(); return true; }
   if (routeTrail.length){ skipRouteTrailPush = true; location.hash = routeTrail.pop(); return true; }
   if (location.hash && location.hash !== "#/" && location.hash !== "#"){ skipRouteTrailPush = true; routeTrail.length = 0; location.hash = "#/"; return true; }
   return false;
@@ -901,9 +928,9 @@ const suppressFullscreenSpace = e => {
 window.addEventListener("keydown", suppressFullscreenSpace, true);
 window.addEventListener("keyup", suppressFullscreenSpace, true);
 window.addEventListener("keydown", e => {
+  if (!["Escape","Backspace","BrowserBack"].includes(e.key)) lastPlayerBackTime = 0;
   if ($(".player-frame.player-fullscreen")) {
-    const keyForEmbed = !document.activeElement?.matches(".player-exit")
-      && ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter"," ","MediaPlayPause"].includes(e.key) ? e.key : undefined;
+    const keyForEmbed = ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter"," ","MediaPlayPause"].includes(e.key) ? e.key : undefined;
     showPlayerHud(keyForEmbed);
   }
   if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key) && isNativeApp()) activateNativeTvMode();
@@ -933,8 +960,16 @@ window.addEventListener("keydown", e => {
   if (isTvMode && e.target.matches("#searchQuery") && e.key === "ArrowDown"){
     const first = $("#grid .card"); if (first){ e.preventDefault(); first.focus({preventScroll:true}); first.scrollIntoView({block:"center",inline:"nearest",behavior:"smooth"}); return; }
   }
-  if (isTvMode && e.target.matches("#playSeason") && e.key === "ArrowRight"){
-    const episode = $(".episode-card"); if (episode){ e.preventDefault(); episode.focus({preventScroll:true}); episode.scrollIntoView({block:"nearest",inline:"nearest"}); return; }
+  if (isTvMode && e.target.matches("#playSeason")){
+    if (e.key === "ArrowLeft"){ e.preventDefault(); focusTvSidebar(); return; }
+    if (e.key === "ArrowUp"){ e.preventDefault(); $("[data-act='play-detail']")?.focus({preventScroll:true}); return; }
+    if (e.key === "ArrowRight" || e.key === "ArrowDown"){
+      e.preventDefault();
+      const episode = $(".episode-card"), tab = $(".detail-tabs .detail-tab");
+      if (episode){ episode.focus({preventScroll:true}); episode.scrollIntoView({block:"nearest",inline:"nearest"}); }
+      else tab?.focus({preventScroll:true});
+      return;
+    }
   }
   if (e.key === "Enter" && e.target.matches('[role="button"][tabindex="0"]') && !e.target.matches("button,a")){ e.preventDefault(); e.target.click(); return; }
   const playerOverlay = $(".player-frame.player-fullscreen");
@@ -1147,6 +1182,7 @@ document.addEventListener("click", e => {
 $("#yr").textContent = new Date().getFullYear();
 window.addEventListener("hashchange", router);
 (async () => {
+  hashFromPath();
   const localBrowser = (location.hostname === "127.0.0.1" || location.hostname === "localhost") && !isNativeApp();
   if (!localBrowser){ try{ const cfg = await fetch("./app-config.json", {headers:{accept:"application/json"}}); if (cfg.ok){ const data = await cfg.json(); if (typeof data.apiBaseUrl === "string" && data.apiBaseUrl.trim()) API_BASE_URL = data.apiBaseUrl.trim().replace(/\/$/, ""); } }catch(e){} }
   try{ await loadGenres(); }catch(e){}

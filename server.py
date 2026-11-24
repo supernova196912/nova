@@ -105,6 +105,7 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
     const progressSelector = 'input[type="range"],[role="slider"],.vjs-progress-control,.plyr__progress,.jw-slider-time,[class*="progress" i],[id*="progress" i],[class*="seek" i],[id*="seek" i],[class*="timeline" i],[id*="timeline" i],[class*="scrubber" i],[id*="scrubber" i]';
     const isSeekbar = element => {
       if (!element) return false;
+      if (isVolumeControl(element)) return false;
       const candidate = element.closest?.(progressSelector), childRange = element.querySelector?.('input[type="range"],[role="slider"]');
       if (candidate || childRange) return true;
       const rect = element.getBoundingClientRect?.(), marker = `${element.className?.baseVal || element.className || ""} ${element.id || ""}`;
@@ -113,7 +114,7 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
     const seekProgress = (element, key) => {
       const video = doc.querySelector("video");
       if (!video) return;
-      const duration = video.duration || 1e9, delta = key === "ArrowLeft" ? -10 : 10;
+      const duration = video.duration || 1e9, delta = key === "ArrowLeft" ? -10 : key === "ArrowRight" ? 10 : 0;
       video.currentTime = Math.max(0, Math.min(duration, video.currentTime + delta));
       const bar = element.closest?.(progressSelector) || element;
       const range = element.matches?.('input[type="range"]') ? element : element.querySelector?.('input[type="range"]') || bar.querySelector?.('input[type="range"]');
@@ -156,7 +157,6 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       const top = Math.min(...controls.map(el => el.getBoundingClientRect().top));
       const topRow = rect.top <= top + Math.max(40, rect.height * .8);
       const row = controls.filter(el => Math.abs(el.getBoundingClientRect().top - rect.top) < Math.max(30, rect.height * .7));
-      if ((direction === "ArrowUp" && topRow) || (direction === "ArrowRight" && topRow && row.indexOf(focused) === row.length - 1)) { send("cinenova-player-exit-focus"); return; }
       const dx = direction === "ArrowLeft" ? -1 : direction === "ArrowRight" ? 1 : 0;
       const dy = direction === "ArrowUp" ? -1 : direction === "ArrowDown" ? 1 : 0;
       const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
@@ -189,7 +189,13 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       if (video.paused) video.play?.().catch?.(() => {}); else video.pause();
       return true;
     };
-    let hudTimer = 0, skipNextForwardedKey = null;
+    let hudTimer = 0, skipNextForwardedKey = null, lastBackPressAt = 0;
+    const backKeys = ["Escape","Backspace","BrowserBack"];
+    const requestPlayerBack = () => {
+      const now = Date.now();
+      if (now - lastBackPressAt <= 1400) { lastBackPressAt = 0; send("cinenova-exit-player"); }
+      else { lastBackPressAt = now; send("cinenova-player-back-confirmation"); }
+    };
     const hudSelector = 'header,nav,button,a,select,[role="button"],[role="menuitem"],[role="option"],[onclick],[tabindex],li,.item,[class*="control" i],[class*="menu" i],[class*="server" i],[class*="language" i],[class*="episode" i],[class*="toolbar" i]';
     const collectHudControls = () => [...doc.querySelectorAll(hudSelector)].filter(el => {
       if (el.matches("html,body,iframe,video") || !el.getClientRects().length) return false;
@@ -220,9 +226,6 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       });
       clearTimeout(hudTimer);
       hudTimer = setTimeout(() => {
-        const video = doc.querySelector("video");
-        const openMenu = [...doc.querySelectorAll(menuSelector)].some(el => el.getClientRects().length && !el.hidden && doc.defaultView.getComputedStyle(el).display !== "none" && doc.defaultView.getComputedStyle(el).visibility !== "hidden");
-        if (video?.paused || openMenu) return;
         doc.documentElement.classList.add("cn-hud-hidden");
       },3500);
     };
@@ -230,15 +233,17 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
     view.addEventListener("keyup", event => { if (arrows.includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
     view.addEventListener("keypress", event => { if (arrows.includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
     view.addEventListener("keydown", event => {
+      if (!backKeys.includes(event.key)) lastBackPressAt = 0;
       const hudWasHidden = doc.documentElement.classList.contains("cn-hud-hidden");
       wakePlayerHud();
       send("cinenova-player-activity");
+      if (backKeys.includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); requestPlayerBack(); return; }
       if (event.key === " " || event.key === "Space" || event.code === "Space") { event.preventDefault(); event.stopImmediatePropagation(); if (!toggleVideoPlayback()) activatePlayerControl(); return; }
       if (hudWasHidden) { event.preventDefault(); event.stopImmediatePropagation(); visibleControls()[0]?.focus({preventScroll:true}); return; }
+      if (event.key === "Enter" && isSeekbar(doc.activeElement)) { event.preventDefault(); event.stopImmediatePropagation(); seekProgress(doc.activeElement,"Enter"); return; }
       if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && isSeekbar(doc.activeElement)) { event.preventDefault(); event.stopImmediatePropagation(); seekProgress(doc.activeElement, event.key); return; }
       if ((event.key === "ArrowUp" || event.key === "ArrowDown") && isVolumeControl(doc.activeElement)) { event.preventDefault(); event.stopImmediatePropagation(); adjustVolume(doc.activeElement,event.key); return; }
       if (arrows.includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); movePlayerFocus(event.key); return; }
-      if (["Escape", "Backspace", "BrowserBack"].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-exit-player"); return; }
       if (event.key === "Enter") { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); activatePlayerControl(); }
       else if (event.key === "MediaPlayPause") { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); toggleVideoPlayback(); }
     }, true);
@@ -283,11 +288,14 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       }
       if (event.data?.type !== "cinenova-player-key") return;
       const key=event.data.key;
+      if (!backKeys.includes(key)) lastBackPressAt = 0;
       if (skipNextForwardedKey === key) { skipNextForwardedKey = null; return; }
       const hudWasHidden = doc.documentElement.classList.contains("cn-hud-hidden");
       wakePlayerHud();
+      if (backKeys.includes(key)) { requestPlayerBack(); return; }
       if (key === " " || key === "Space") { if (!toggleVideoPlayback()) activatePlayerControl(); return; }
       if (hudWasHidden) { visibleControls()[0]?.focus({preventScroll:true}); return; }
+      if (key === "Enter" && isSeekbar(doc.activeElement)) { seekProgress(doc.activeElement,"Enter"); return; }
       if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Enter"," ","MediaPlayPause"].includes(key)) return;
       if ((key === "ArrowLeft" || key === "ArrowRight") && isSeekbar(doc.activeElement)) { seekProgress(doc.activeElement, key); return; }
       if ((key === "ArrowUp" || key === "ArrowDown") && isVolumeControl(doc.activeElement)) { adjustVolume(doc.activeElement,key); return; }

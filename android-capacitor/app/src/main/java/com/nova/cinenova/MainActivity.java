@@ -251,18 +251,19 @@ public class MainActivity extends BridgeActivity {
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
-        if (fullscreenView != null) {
-            hideFullscreenView();
-            return;
-        }
         if (bridge == null) {
+            if (fullscreenView != null) {
+                hideFullscreenView();
+                return;
+            }
             super.onBackPressed();
             return;
         }
         bridge.getWebView().evaluateJavascript(
             "window.onAndroidBackPressed ? window.onAndroidBackPressed() : false",
             result -> {
-                if (!"true".equals(result)) super.onBackPressed();
+                if (fullscreenView != null && !playerFullscreenActive) hideFullscreenView();
+                else if (!"true".equals(result)) super.onBackPressed();
             }
         );
     }

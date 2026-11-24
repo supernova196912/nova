@@ -1,16 +1,26 @@
 const DEFAULT_ALLOWED_ORIGINS = new Set([
+  "https://nova-2yi.pages.dev",
+  "http://127.0.0.1",
+  "https://127.0.0.1",
   "https://localhost",
   "http://localhost",
   "capacitor://localhost",
 ]);
 
-function addCorsHeaders(headers, request, env) {
-  const origin = request.headers.get("Origin");
+function originAllowed(request, env) {
   const allowed = new Set(DEFAULT_ALLOWED_ORIGINS);
   for (const item of (env.CINENOVA_ALLOWED_ORIGINS || "").split(",")) {
-    if (item.trim()) allowed.add(item.trim());
+    const value = item.trim();
+    if (value) { try { allowed.add(new URL(value).origin); } catch {} }
   }
-  if (origin && allowed.has(origin)) {
+  const supplied = [request.headers.get("Origin"), request.headers.get("Referer")].filter(Boolean);
+  const parsed = supplied.map((value) => { try { return new URL(value); } catch { return null; } });
+  return parsed.length > 0 && parsed.every((url) => url && (allowed.has(url.origin) || ((url.protocol === "http:" || url.protocol === "https:") && ["localhost", "127.0.0.1"].includes(url.hostname))));
+}
+
+function addCorsHeaders(headers, request, env) {
+  const origin = request.headers.get("Origin");
+  if (origin && originAllowed(request, env)) {
     headers.set("Access-Control-Allow-Origin", origin);
     headers.append("Vary", "Origin");
   }
@@ -20,12 +30,17 @@ function jsonResponse(payload, status, request, env) {
   const headers = new Headers({
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "X-Frame-Options": "SAMEORIGIN",
   });
   addCorsHeaders(headers, request, env);
   return new Response(JSON.stringify(payload), { status, headers });
 }
 
 export function onRequestOptions({ request, env }) {
+  if (!originAllowed(request, env)) return new Response(null, { status: 403 });
   const headers = new Headers({
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Accept, Content-Type",
@@ -36,6 +51,7 @@ export function onRequestOptions({ request, env }) {
 }
 
 export async function onRequestGet({ request, env, params }) {
+  if (!originAllowed(request, env)) return jsonResponse({ error: "forbidden" }, 403, request, env);
   const apiKey = String(env.TMDB_API_KEY || "").trim();
   if (!apiKey) {
     return jsonResponse({ error: "tmdb_not_configured" }, 503, request, env);
@@ -48,6 +64,9 @@ export async function onRequestGet({ request, env, params }) {
   }
 
   const incomingUrl = new URL(request.url);
+  if (incomingUrl.search.length > 4096 || [...incomingUrl.searchParams].length > 40 || [...incomingUrl.searchParams].some(([k, v]) => !/^[A-Za-z0-9_.-]{1,64}$/.test(k) || v.length > 500 || /[\u0000-\u001f]/.test(v))) {
+    return jsonResponse({ error: "invalid_query" }, 400, request, env);
+  }
   const upstreamUrl = new URL(`https://api.themoviedb.org/3/${path}`);
   upstreamUrl.search = incomingUrl.search;
   const headers = new Headers({ Accept: "application/json" });
@@ -68,4 +87,13 @@ export async function onRequestGet({ request, env, params }) {
   } catch {
     return jsonResponse({ error: "tmdb_unavailable" }, 502, request, env);
   }
+}
+
+export async function onRequestHead(context) {
+  const response = await onRequestGet(context);
+  return new Response(null, { status: response.status, headers: response.headers });
+}
+
+export function onRequest(context) {
+  return new Response("Method not allowed", { status: 405, headers: { Allow: "GET, HEAD, OPTIONS", "X-Content-Type-Options": "nosniff" } });
 }

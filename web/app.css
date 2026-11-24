@@ -12,9 +12,9 @@ img{display:block}
 /* DEVICE MODE */
 #tvSidebar{display:none}
 .bottom-nav{display:none}
-body.tv-mode #tvSidebar{position:fixed;inset:0 auto 0 0;z-index:80;width:236px;padding:26px 14px;background:#101322;border-right:1px solid #293044;display:flex;flex-direction:column;gap:8px}
-.tv-logo{font-size:24px;font-weight:950;letter-spacing:1px;margin:0 8px 24px}.tv-logo span{color:#6b91ff}
-.tv-link{display:flex;align-items:center;gap:14px;min-height:52px;padding:10px 14px;border-radius:12px;color:#e5e8f3;font-weight:700}
+body.tv-mode #tvSidebar{position:fixed;inset:0 auto 0 0;z-index:80;width:196px;padding:18px 10px;background:#101322;border-right:1px solid #293044;display:flex;flex-direction:column;gap:4px}
+.tv-logo{display:block;align-self:center;text-align:center;font-size:24px;font-weight:950;letter-spacing:1px;margin:20px auto 24px}.tv-logo span{color:#6b91ff}
+.tv-link{display:flex;align-items:center;gap:10px;min-height:44px;padding:8px 10px;border-radius:12px;color:#e5e8f3;font-weight:700}
 .tv-link:hover,.tv-link.active{background:#244fce;color:white}
 .tv-link .tv-icon{width:26px;text-align:center;font-size:20px}
 body.tv-sidebar-collapsed #tvSidebar{width:80px;padding-left:10px;padding-right:10px}
@@ -25,10 +25,13 @@ body.tv-sidebar-collapsed .tv-logo span{font-size:15px;letter-spacing:0}
 body.tv-sidebar-collapsed .tv-link{justify-content:center;padding-left:6px;padding-right:6px;font-size:0}
 body.tv-sidebar-collapsed .tv-link .tv-icon{font-size:22px}
 body.tv-sidebar-collapsed #tvCollapse{font-size:19px}
-body.tv-mode header{margin-left:236px;padding-left:3%;padding-right:3%}
+body.tv-mode header{margin-left:196px;padding-left:3%;padding-right:3%}
 body.tv-mode header>.logo,body.tv-mode #nav{display:none}
 body.tv-mode .hright{margin-left:auto}
-body.tv-mode main,body.tv-mode footer{margin-left:236px}
+body.tv-mode main,body.tv-mode footer{margin-left:196px}
+body.tv-mode.tv-sidebar-collapsed #tvSidebar{width:80px;padding-left:10px;padding-right:10px}
+body.tv-mode.tv-sidebar-collapsed header{margin-left:80px}
+body.tv-mode.tv-sidebar-collapsed main,body.tv-mode.tv-sidebar-collapsed footer{margin-left:80px}
 body.tv-mode .dinner,body.tv-mode .page,body.tv-mode section.row{padding-left:3%;padding-right:3%}
 body.tv-mode .detail-tabs{padding-left:3%;padding-right:3%}
 body.tv-mode .detail-panel{padding-left:3%;padding-right:3%}
@@ -206,6 +209,7 @@ footer{margin-top:50px;padding:40px 4% 30px;background:#07071c;color:var(--muted
 .fgrid a:hover,.fgrid button:hover{color:#fff}
 .copy{border-top:1px solid #1d1d48;padding-top:18px;line-height:1.7}
 .copy a{color:#01b4e4}
+.footer-links{display:grid;gap:18px;margin-bottom:24px}.footer-quick,.footer-legal{display:flex;flex-wrap:wrap;gap:10px 18px}.footer-links a{color:var(--muted)}.footer-links a:hover{color:#fff}.legal-notice{max-width:900px;margin-top:10px;font-size:12px;line-height:1.6;color:#777991}.legal-page{max-width:1000px;min-height:55vh}.legal-page p{max-width:850px;line-height:1.8;color:#c6c7d8;margin:18px 0}
 
 /* MODAL / TOAST */
 .modal{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;padding:20px}

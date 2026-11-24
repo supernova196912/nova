@@ -64,7 +64,7 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-player-bridge>
     if (!doc?.documentElement || doc.documentElement.dataset.cinenovaPlayerBridge) return;
     doc.documentElement.dataset.cinenovaPlayerBridge = "1";
     const style = doc.createElement("style");
-    style.textContent = 'button,a,select,[role="button"],[role="menuitem"],[role="option"],[class*="episode" i],[class*="server" i],[class*="dropdown" i]{opacity:1!important;visibility:visible!important;pointer-events:auto!important}button:focus,a:focus,select:focus,[role="button"]:focus,[role="menuitem"]:focus,[role="option"]:focus,[onclick]:focus,[tabindex]:focus,li:focus{outline:3px solid #74a0ff!important;outline-offset:2px!important;border-radius:8px!important;background-color:rgba(76,130,255,.25)!important}html.cn-hud-hidden [data-cn-hud-control="1"]{opacity:0!important;pointer-events:none!important;transition:opacity .25s ease!important}';
+    style.textContent = 'button,a,select,[role="button"],[role="menuitem"],[role="option"],[class*="episode" i],[class*="server" i],[class*="dropdown" i]{opacity:1!important;visibility:visible!important;pointer-events:auto!important}button:focus,a:focus,select:focus,[role="button"]:focus,[role="menuitem"]:focus,[role="option"]:focus,[onclick]:focus,[tabindex]:focus,li:focus{outline:3px solid #74a0ff!important;outline-offset:2px!important;border-radius:8px!important;background-color:rgba(76,130,255,.25)!important}html.cn-hud-hidden [data-cn-hud-control="1"]{opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:opacity .25s ease!important}html.cn-hud-hidden video::-webkit-media-controls,html.cn-hud-hidden video::-webkit-media-controls-enclosure,html.cn-hud-hidden video::-webkit-media-controls-panel{display:none!important;opacity:0!important;visibility:hidden!important;-webkit-appearance:none!important}video::-webkit-media-controls,video::-webkit-media-controls-enclosure,video::-webkit-media-controls-panel,video::-webkit-media-controls-overlay-play-button{display:none!important;-webkit-appearance:none!important}';
     (doc.head || doc.documentElement).appendChild(style);
     const controlSelector = 'button,a,select,[role="button"],[role="menuitem"],[role="option"],[onclick],[tabindex],li,.item';
     const menuSelector = '[role="menu"],[role="listbox"],.dropdown-menu,[class*="language-menu" i],[class*="server-menu" i]';
@@ -111,9 +111,15 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-player-bridge>
         range.dispatchEvent(new view.Event("input",{bubbles:true})); range.dispatchEvent(new view.Event("change",{bubbles:true}));
       }
     };
+    const hideNativeVideoControls = () => doc.querySelectorAll("video").forEach(video => {
+      if (video.controls) video.controls = false;
+      video.removeAttribute("controls");
+      if (!video.hasAttribute("controlslist")) video.setAttribute("controlslist","nodownload noplaybackrate noremoteplayback");
+    });
     const promoteVisibleControls = () => visibleControls().forEach(el => { if (el.tabIndex !== 0) el.tabIndex = 0; });
-    promoteVisibleControls();
-    new MutationObserver(promoteVisibleControls).observe(doc.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["class","style","hidden","aria-hidden"]});
+    const refreshPlayerControls = () => { hideNativeVideoControls(); promoteVisibleControls(); };
+    refreshPlayerControls();
+    new MutationObserver(refreshPlayerControls).observe(doc.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["class","style","hidden","aria-hidden","controls"]});
     const view = doc.defaultView;
     const movePlayerFocus = direction => {
       const controls = visibleControls();
@@ -134,7 +140,7 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-player-bridge>
         const cross = dx ? Math.abs(y - cy) : Math.abs(x - cx);
         return {el, score:primary + cross * 1.5, primary};
       }).filter(item => item.primary > 4).sort((a,b) => a.score - b.score)[0]?.el;
-      if (!nextControl && ((direction === "ArrowUp" && topRow) || (direction === "ArrowRight" && topRow))) { send("cinenova-player-exit-focus"); return; }
+      if (!nextControl && ((direction === "ArrowUp" && topRow) || (direction === "ArrowRight" && topRow))) { send("cinenova-player-subtitle-focus"); return; }
       nextControl?.focus({preventScroll:true});
     };
     const activatePlayerControl = () => {
@@ -159,10 +165,12 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-player-bridge>
       return true;
     };
     let subtitlesEnabled = false;
-    const toggleSubtitles = enabled => {
+    const toggleSubtitles = (enabled, language = "auto") => {
       const tracks = [...doc.querySelectorAll("video")].flatMap(video => Array.from(video.textTracks || []).map(track => ({video,track})));
       if (tracks.length) {
-        const preferred = tracks.find(({track}) => /^(es|spa|lat)(-|$)/i.test(track.language || "")) || tracks[0];
+        const preferred = language && language !== "auto"
+          ? tracks.find(({track}) => (track.language || "").toLowerCase().startsWith(language.toLowerCase()))
+          : tracks.find(({track}) => /^(es|spa|lat)(-|$)/i.test(track.language || "")) || tracks[0];
         tracks.forEach(item => { item.track.mode = enabled && item === preferred ? "showing" : "disabled"; });
       }
       if (!tracks.length) {
@@ -171,7 +179,7 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-player-bridge>
         if (button && subtitlesEnabled !== enabled) button.click();
       }
       subtitlesEnabled = enabled;
-      doc.querySelectorAll("iframe").forEach(frame => { try { frame.contentWindow?.postMessage({type:"cinenova-toggle-subtitles",enabled}, "*"); } catch (_) {} });
+      doc.querySelectorAll("iframe").forEach(frame => { try { frame.contentWindow?.postMessage({type:"cinenova-toggle-subtitles",enabled,language}, "*"); } catch (_) {} });
     };
     let hudTimer = 0, skipNextForwardedKey = null, lastBackPressAt = 0;
     const backKeys = ["Escape","Backspace","BrowserBack"];
@@ -180,14 +188,12 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-player-bridge>
       if (now - lastBackPressAt <= 1400) { lastBackPressAt = 0; send("cinenova-exit-player"); }
       else { lastBackPressAt = now; send("cinenova-player-back-confirmation"); }
     };
-    const hudSelector = 'header,nav,button,a,select,[role="button"],[role="menuitem"],[role="option"],[onclick],[tabindex],li,.item,[class*="control" i],[class*="menu" i],[class*="server" i],[class*="language" i],[class*="episode" i],[class*="toolbar" i]';
+    const hudSelector = 'header,nav,button,a,select,[role="button"],[role="menuitem"],[role="option"],[onclick],[tabindex],li,.item,[class*="control" i],[class*="menu" i],[class*="server" i],[class*="language" i],[class*="episode" i],[class*="toolbar" i],[class*="subtitle" i],[class*="progress" i],[class*="volume" i],[class*="seek" i],[class*="overlay" i],[id*="control" i],[id*="progress" i],[id*="volume" i],[id*="subtitle" i]';
     const collectHudControls = () => [...doc.querySelectorAll(hudSelector)].filter(el => {
       if (el.matches("html,body,iframe,video") || !el.getClientRects().length) return false;
-      const style = doc.defaultView.getComputedStyle(el), rect = el.getBoundingClientRect();
+      const style = doc.defaultView.getComputedStyle(el);
       if (style.display === "none" || style.visibility === "hidden") return false;
-      const fixedHud = (style.position === "fixed" || style.position === "absolute") && rect.top < doc.documentElement.clientHeight * .34;
-      const lowerControls = /control|toolbar|player|video/i.test([el.className,el.id].join(" ")) && rect.bottom > doc.documentElement.clientHeight * .66;
-      return fixedHud || lowerControls;
+      return true;
     });
     const dispatchWake = target => {
       if (!target?.dispatchEvent) return;
@@ -254,8 +260,11 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-player-bridge>
     }, true);
     new MutationObserver(() => doc.querySelectorAll("iframe").forEach(observeFrame)).observe(doc.documentElement, {childList:true,subtree:true});
     view.addEventListener("message", event => {
-      if (event.source !== view.parent) return;
-      if (event.data?.type === "cinenova-toggle-subtitles") { toggleSubtitles(Boolean(event.data.enabled)); return; }
+      if (event.source !== view.parent) {
+        if (event.data?.type === "cinenova-subtitle-options") send("cinenova-subtitle-options");
+        return;
+      }
+      if (event.data?.type === "cinenova-toggle-subtitles") { toggleSubtitles(Boolean(event.data.enabled), event.data.language || "auto"); return; }
       if (event.data?.type === "cinenova-show-controls") {
         const hudWasHidden = doc.documentElement.classList.contains("cn-hud-hidden");
         wakePlayerHud();
@@ -289,6 +298,7 @@ const PLAYER_REMOTE_SCRIPT = `<script data-cinenova-player-bridge>
     });
   };
   install(document);
+  wakePlayerHud();
 })();
 </script>`;
 

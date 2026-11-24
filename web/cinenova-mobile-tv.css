@@ -401,6 +401,19 @@ body.tv-mode #searchQuery:focus-visible {
 }
 body.tv-mode .detail-tab:focus-visible { outline:3px solid #74a0ff; outline-offset:2px; background:rgba(76,130,255,.26); color:#fff; }
 
+/* Controles de TV: menú CC compacto, sin botón de salida redundante. */
+.player-hud .player-exit { display:none !important; }
+body.tv-mode .player-hud { top:16px; right:18px; gap:0; }
+body.tv-mode .player-hud .player-cc-btn { width:38px; min-width:38px; min-height:30px; padding:0; border:1px solid rgba(255,255,255,.28); border-radius:8px; background:rgba(8,12,20,.72); font-size:11px; letter-spacing:.04em; }
+.player-cc-menu { position:absolute; top:calc(100% + 6px); right:0; z-index:2; display:flex; width:142px; flex-direction:column; gap:2px; padding:5px; border:1px solid rgba(255,255,255,.14); border-radius:10px; background:rgba(8,12,20,.88); box-shadow:0 8px 24px rgba(0,0,0,.28); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); }
+.player-cc-menu[hidden] { display:none !important; }
+.player-hud .player-cc-option { width:100%; min-height:30px; padding:5px 8px; border:0; border-radius:6px; background:transparent; font-size:11px; font-weight:600; text-align:left; }
+.player-hud .player-cc-option.selected { background:rgba(116,160,255,.2); color:#fff; }
+.player-hud .player-cc-option:focus-visible { outline:2px solid #74a0ff; outline-offset:0; }
+.episode-meta { flex-direction:row; align-items:baseline; gap:7px; }
+.episode-number { flex:none; color:#8eafff; font-size:11px; font-weight:800; letter-spacing:.04em; }
+.episode-card .episode-meta strong { min-width:0; }
+
 @media (max-width: 767px) {
   .player-hud { top:12px; right:12px; gap:8px; }
   .player-hud button { min-height:42px; padding:0 12px; font-size:13px; }

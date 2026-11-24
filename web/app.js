@@ -560,7 +560,7 @@ async function loadSeason(id, n){
     if (t !== routeToken || request !== episodeRequestToken) return;
     box.innerHTML = (s.episodes || []).map(e => `<button class="episode-card" data-act="play-episode" data-type="tv" data-id="${id}" data-season="${n}" data-episode="${e.episode_number}" data-search="${esc(e.name || "").toLowerCase()}" aria-label="Reproducir temporada ${n}, episodio ${e.episode_number}: ${esc(e.name || "")}">
       <span class="episode-thumb">${e.still_path ? `<img loading="lazy" src="${img(e.still_path, "w300")}" alt="">` : '<span class="episode-thumb-fallback"></span>'}</span>
-      <span class="episode-meta"><strong>${esc(e.name || "Episodio " + e.episode_number)}</strong></span>
+      <span class="episode-meta"><span class="episode-number">E${String(e.episode_number).padStart(2, "0")}</span><strong>${esc(e.name || "Episodio " + e.episode_number)}</strong></span>
     </button>`).join("") || '<p class="episode-empty">No hay capítulos disponibles para esta temporada.</p>';
   }catch(e){ if (t === routeToken && request === episodeRequestToken) box.innerHTML = '<p class="episode-empty">No se pudieron cargar los capítulos. Vuelve a elegir la temporada para reintentar.</p>'; }
 }
@@ -617,17 +617,30 @@ function createPlayerHud(player, frame){
   if (!isTvMode || $(".player-hud", player)) return;
   subtitlesEnabled = false;
   const hud = document.createElement("div"); hud.className = "player-hud";
-  const cc = document.createElement("button"); cc.type = "button"; cc.className = "player-cc-btn"; cc.textContent = "CC Subtítulos: OFF"; cc.setAttribute("aria-pressed", "false"); cc.tabIndex = 0;
-  const exit = document.createElement("button"); exit.type = "button"; exit.className = "player-exit"; exit.textContent = "← Salir"; exit.tabIndex = 0;
-  cc.addEventListener("click", () => {
-    subtitlesEnabled = !subtitlesEnabled;
-    cc.textContent = `CC Subtítulos: ${subtitlesEnabled ? "ON" : "OFF"}`;
-    cc.setAttribute("aria-pressed", String(subtitlesEnabled));
-    frame.contentWindow?.postMessage({type:"cinenova-toggle-subtitles",enabled:subtitlesEnabled}, "*");
-    showPlayerHud();
+  const cc = document.createElement("button"); cc.type = "button"; cc.className = "player-cc-btn"; cc.textContent = "CC"; cc.setAttribute("aria-label", "Opciones de subtítulos: apagados"); cc.setAttribute("aria-haspopup", "menu"); cc.setAttribute("aria-expanded", "false"); cc.dataset.enabled = "false"; cc.tabIndex = 0;
+  const menu = document.createElement("div"); menu.className = "player-cc-menu"; menu.setAttribute("role", "menu"); menu.hidden = true;
+  const options = [
+    {label:"Desactivados", enabled:false, language:""},
+    {label:"Español", enabled:true, language:"es"},
+    {label:"Automático", enabled:true, language:"auto"}
+  ];
+  options.forEach(option => {
+    const item = document.createElement("button"); item.type = "button"; item.className = "player-cc-option"; item.setAttribute("role", "menuitemradio"); item.dataset.enabled = String(option.enabled); item.dataset.language = option.language; item.textContent = option.label; item.tabIndex = -1;
+    item.addEventListener("click", () => {
+      subtitlesEnabled = option.enabled;
+      cc.dataset.enabled = String(option.enabled);
+      cc.setAttribute("aria-label", `Opciones de subtítulos: ${option.label.toLowerCase()}`);
+      menu.querySelectorAll(".player-cc-option").forEach(el => { const selected = el === item; el.classList.toggle("selected", selected); el.setAttribute("aria-checked", String(selected)); });
+      frame.contentWindow?.postMessage({type:"cinenova-toggle-subtitles",enabled:option.enabled,language:option.language}, "*");
+      menu.hidden = true; cc.setAttribute("aria-expanded", "false"); cc.focus({preventScroll:true}); showPlayerHud();
+    });
+    menu.append(item);
   });
-  exit.addEventListener("click", exitPlayerFullscreen);
-  hud.append(cc, exit); player.append(hud);
+  cc.addEventListener("click", () => {
+    menu.hidden = !menu.hidden; cc.setAttribute("aria-expanded", String(!menu.hidden)); showPlayerHud();
+    if (!menu.hidden) menu.querySelector(".player-cc-option")?.focus({preventScroll:true});
+  });
+  hud.append(cc, menu); player.append(hud);
 }
 function createPlayerLoader(){
   const loader = document.createElement("div");
@@ -652,6 +665,9 @@ function showPlayerHud(key){
       const hud = $(".player-frame.player-fullscreen .player-hud");
       if (!hud) return;
       if (hud.contains(document.activeElement)) $(".player-frame.player-fullscreen iframe")?.focus({preventScroll:true});
+      const cc = $(".player-frame.player-fullscreen .player-cc-btn"), menu = $(".player-frame.player-fullscreen .player-cc-menu");
+      if (menu) menu.hidden = true;
+      cc?.setAttribute("aria-expanded", "false");
       hud.classList.remove("visible");
     }, 3500);
   }
@@ -675,7 +691,7 @@ window.cinenovaExitPlayerFullscreen = () => {
 window.addEventListener("message", event => {
   const type = event.data?.type;
   if (type === "cinenova-exit-player") exitPlayerFullscreen();
-  else if (type === "cinenova-player-exit-focus") { showPlayerHud(); $(".player-frame.player-fullscreen .player-cc-btn")?.focus({preventScroll:true}); }
+  else if (type === "cinenova-player-subtitle-focus") { showPlayerHud(); $(".player-frame.player-fullscreen .player-cc-btn")?.focus({preventScroll:true}); }
   else if (type === "cinenova-player-activity") showPlayerHud();
   else if (type === "cinenova-player-back-confirmation") toast("Presiona Atrás otra vez para salir");
 });
@@ -762,12 +778,15 @@ function handleFullscreenPlayerKey(key, player, event){
 function handlePlayerHudKey(key, player, event){
   const hud = $(".player-hud", player), focused = document.activeElement;
   if (!hud?.contains(focused)) return false;
-  const cc = $(".player-cc-btn", hud), exit = $(".player-exit", hud), frame = $("iframe", player);
+  const cc = $(".player-cc-btn", hud), menu = $(".player-cc-menu", hud), frame = $("iframe", player);
+  const options = $$(".player-cc-option", menu), index = options.indexOf(focused);
   event?.preventDefault(); event?.stopImmediatePropagation(); showPlayerHud();
+  if (key === "Escape" && !menu.hidden){ menu.hidden = true; cc.setAttribute("aria-expanded", "false"); cc.focus({preventScroll:true}); return true; }
   if (key === "Enter") { focused.click(); return true; }
-  if (key === "ArrowRight" && focused === cc) { exit.focus({preventScroll:true}); return true; }
-  if (key === "ArrowLeft" && focused === exit) { cc.focus({preventScroll:true}); return true; }
+  if (focused === cc && key === "ArrowDown") { menu.hidden = false; cc.setAttribute("aria-expanded", "true"); options[0]?.focus({preventScroll:true}); return true; }
+  if (index >= 0 && (key === "ArrowUp" || key === "ArrowDown")) { const next = options[index + (key === "ArrowUp" ? -1 : 1)]; if (next) next.focus({preventScroll:true}); else if (key === "ArrowUp") cc.focus({preventScroll:true}); return true; }
   if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(key)) {
+    if (!menu.hidden) { menu.hidden = true; cc.setAttribute("aria-expanded", "false"); }
     frame?.focus({preventScroll:true}); frame?.contentWindow?.postMessage({type:"cinenova-player-key",key}, "*"); return true;
   }
   return true;
@@ -988,6 +1007,12 @@ window.addEventListener("keydown", suppressFullscreenSpace, true);
 window.addEventListener("keyup", suppressFullscreenSpace, true);
 window.addEventListener("keydown", e => {
   if (!["Escape","Backspace","BrowserBack"].includes(e.key)) lastPlayerBackTime = 0;
+  const playerForHud = $(".player-frame.player-fullscreen"), ccMenu = playerForHud && $(".player-cc-menu", playerForHud);
+  if (e.key === "Escape" && ccMenu && !ccMenu.hidden && $(".player-hud", playerForHud)?.contains(document.activeElement)){
+    e.preventDefault(); e.stopImmediatePropagation(); ccMenu.hidden = true;
+    $(".player-cc-btn", playerForHud)?.setAttribute("aria-expanded", "false");
+    $(".player-cc-btn", playerForHud)?.focus({preventScroll:true}); showPlayerHud(); return;
+  }
   if ($(".player-frame.player-fullscreen")) {
     const keyForEmbed = ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter"," ","MediaPlayPause"].includes(e.key) ? e.key : undefined;
     showPlayerHud(keyForEmbed);

@@ -43,6 +43,9 @@ let lastPlayerBackTime = 0;
 let playerHudTimer = 0;
 let subtitlesEnabled = false;
 let currentPlayerContext = null;
+const playerDebugErrors = [];
+window.addEventListener("error", e => { playerDebugErrors.push(String(e.message || e.error || "Error de script")); }, true);
+window.addEventListener("unhandledrejection", e => { playerDebugErrors.push(String(e.reason?.message || e.reason || "Promesa rechazada")); }, true);
 function isNativeApp(){
   return Boolean((window.Capacitor && window.Capacitor.isNativePlatform?.())
     || (location.hostname === "localhost" && /Android/i.test(navigator.userAgent || "")));
@@ -657,8 +660,9 @@ function startDetailPlayback(id, type, season = 1, episode = 1, metadata = {}){
     const frame = document.createElement("iframe");
     frame.title = "Reproductor de video"; frame.tabIndex = 0; frame.width = "100%"; frame.height = "100%"; frame.setAttribute("frameborder", "0"); frame.allowFullscreen = true;
     frame.allow = "autoplay; fullscreen; picture-in-picture; encrypted-media; remote-playback"; frame.referrerPolicy = "origin";
-    const loader = createPlayerLoader();
+    const loader = createPlayerLoader(src, player);
     frame.addEventListener("load", () => { schedulePlayerLoaderRemoval(loader); sendPlayerContext(frame); focusPlayerFrame(frame, true); showPlayerHud(); }, {once:true});
+    frame.addEventListener("error", () => { playerDebugErrors.push("Error al cargar el iframe: " + src); schedulePlayerLoaderRemoval(loader); showPlayerDebugInfo(player, src); }, {once:true});
     frame.src = src; player.append(loader, frame); createPlayerHud(player, frame); document.body.append(player);
     window.CinenovaTvRemote?.setPlayerFullscreen(true); requestAnimationFrame(() => frame.focus({preventScroll:true})); return;
   }
@@ -708,15 +712,24 @@ function createPlayerHud(player, frame){
   });
   hud.append(cc); player.append(hud);
 }
-function createPlayerLoader(){
+function showPlayerDebugInfo(player, src){
+  if (!player?.isConnected) return;
+  let info = $("#playerDebugInfo", player);
+  if (!info){ info = document.createElement("small"); info.id = "playerDebugInfo"; info.className = "player-debug-info"; player.append(info); }
+  info.hidden = false;
+  const detail = playerDebugErrors.slice(-2).join(" · ");
+  info.textContent = `URL: ${src || "sin URL"}${detail ? " · " + detail : ""}`;
+}
+function createPlayerLoader(src = "", player = null){
   const loader = document.createElement("div");
   loader.className = "player-loader"; loader.setAttribute("aria-live", "polite");
   loader.innerHTML = '<div class="spinner"></div><span>Cargando reproductor…</span>';
-  loader._fallbackTimer = setTimeout(() => removePlayerLoader(loader), 12000);
+  loader._fallbackTimer = setTimeout(() => removePlayerLoader(loader), 4000);
+  loader._debugTimer = setTimeout(() => showPlayerDebugInfo(player, src), 5000);
   return loader;
 }
 function schedulePlayerLoaderRemoval(loader){
-  clearTimeout(loader._fallbackTimer);
+  clearTimeout(loader._fallbackTimer); clearTimeout(loader._hideTimer); clearTimeout(loader._debugTimer);
   loader._hideTimer = setTimeout(() => removePlayerLoader(loader), 600);
 }
 function removePlayerLoader(loader){
@@ -742,7 +755,7 @@ function showPlayerHud(key){
 window.cinenovaExitPlayerFullscreen = () => {
   const frame = $(".player-frame.player-fullscreen iframe");
   $$(".player-frame.player-fullscreen").forEach(player => player.classList.remove("player-fullscreen"));
-  $$(".app-player-overlay").forEach(player => { const loader=$(".player-loader",player); if(loader) removePlayerLoader(loader); player.remove(); });
+  $$(".app-player-overlay").forEach(player => { const loader=$(".player-loader",player); if(loader){ clearTimeout(loader._debugTimer); removePlayerLoader(loader); } $("#playerDebugInfo",player)?.remove(); player.remove(); });
   frame?.blur();
   window.CinenovaTvRemote?.setPlayerFullscreen(false);
   if (isTvMode) requestAnimationFrame(() => {

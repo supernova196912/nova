@@ -401,15 +401,15 @@ body.tv-mode #searchQuery:focus-visible {
 }
 body.tv-mode .detail-tab:focus-visible { outline:3px solid #74a0ff; outline-offset:2px; background:rgba(76,130,255,.26); color:#fff; }
 
-/* Controles de TV: menú CC compacto, sin botón de salida redundante. */
+/* Controles de TV: CC abajo, sin botón de volumen (se maneja con el control remoto). */
 .player-hud .player-exit { display:none !important; }
-body.tv-mode .player-hud { top:16px; right:18px; gap:0; }
-body.tv-mode .player-hud .player-cc-btn { width:38px; min-width:38px; min-height:30px; padding:0; border:1px solid rgba(255,255,255,.28); border-radius:8px; background:rgba(8,12,20,.72); font-size:11px; letter-spacing:.04em; }
-.player-cc-menu { position:absolute; top:calc(100% + 6px); right:0; z-index:2; display:flex; width:142px; flex-direction:column; gap:2px; padding:5px; border:1px solid rgba(255,255,255,.14); border-radius:10px; background:rgba(8,12,20,.88); box-shadow:0 8px 24px rgba(0,0,0,.28); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); }
-.player-cc-menu[hidden] { display:none !important; }
-.player-hud .player-cc-option { width:100%; min-height:30px; padding:5px 8px; border:0; border-radius:6px; background:transparent; font-size:11px; font-weight:600; text-align:left; }
-.player-hud .player-cc-option.selected { background:rgba(116,160,255,.2); color:#fff; }
-.player-hud .player-cc-option:focus-visible { outline:2px solid #74a0ff; outline-offset:0; }
+body.tv-mode .player-hud { inset:0; display:block; gap:0; transform:none; pointer-events:none; }
+body.tv-mode .player-hud.visible,body.tv-mode .player-hud:focus-within { opacity:1; transform:none; }
+body.tv-mode .player-hud .player-now-playing { top:14px; left:50%; max-width:min(72vw,680px); transform:translateX(-50%); font-size:12px; }
+body.tv-mode .player-hud .player-cc-btn { position:absolute; top:auto; right:auto; bottom:28px; left:24px; width:auto; min-width:58px; min-height:38px; padding:0 14px; border:1px solid rgba(255,255,255,.3); border-radius:999px; background:rgba(8,12,20,.82); font-size:12px; letter-spacing:.04em; pointer-events:auto; }
+body.tv-mode .player-hud .player-cc-btn[data-enabled="true"] { border-color:#74a0ff; color:#bcd0ff; }
+body.tv-mode .player-frame .player-next-ep-btn { right:24px; bottom:28px; }
+.cn-volume-hidden { display:none !important; }
 .episode-meta { flex-direction:row; align-items:baseline; gap:7px; }
 .episode-number { flex:none; color:#8eafff; font-size:11px; font-weight:800; letter-spacing:.04em; }
 .episode-card .episode-meta strong { min-width:0; }

@@ -92,24 +92,11 @@ UNLIMPLAY_AD_SCRIPT = """<script data-cinenova-ad-filter>
 UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
 (() => {
   const send = type => { try { window.parent.postMessage({type}, "*"); } catch (_) {} };
-  const sendData = data => { try { window.parent.postMessage(data, "*"); } catch (_) {} };
   const install = doc => {
     if (!doc?.documentElement || doc.documentElement.dataset.cinenovaPlayerBridge) return;
     doc.documentElement.dataset.cinenovaPlayerBridge = "1";
-    let lastTimePost = 0;
-    const postPlayerTime = video => {
-      const now = Date.now();
-      if (now - lastTimePost < 900) return;
-      lastTimePost = now;
-      try { window.parent.postMessage({type:"cinenova-player-time",currentTime:video.currentTime,duration:Number.isFinite(video.duration) ? video.duration : 0},"*"); } catch (_) {}
-    };
-    const bindVideoTime = () => doc.querySelectorAll("video").forEach(video => {
-      if (video.dataset.cinenovaTimeBound) return;
-      video.dataset.cinenovaTimeBound = "1";
-      ["timeupdate","loadedmetadata","durationchange","play","seeked"].forEach(type => video.addEventListener(type, () => postPlayerTime(video)));
-    });
     const style = doc.createElement("style");
-    style.textContent = 'button,a,select,[role="button"],[role="menuitem"],[role="option"],[class*="episode" i],[class*="server" i],[class*="dropdown" i]{opacity:1!important;visibility:visible!important;pointer-events:auto!important}.cn-volume-hidden:not(video):not(iframe){display:none!important}video,iframe{display:block!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important}.player-cc-btn{right:24px!important;bottom:18px!important;left:auto!important}button:focus,a:focus,select:focus,[role="button"]:focus,[role="menuitem"]:focus,[role="option"]:focus,[onclick]:focus,[tabindex]:focus,li:focus{outline:3px solid #74a0ff!important;outline-offset:2px!important;border-radius:8px!important;background-color:rgba(76,130,255,.25)!important}html.cn-hud-hidden [data-cn-hud-control="1"]{opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:opacity .25s ease!important}html.cn-hud-hidden video::-webkit-media-controls,html.cn-hud-hidden video::-webkit-media-controls-enclosure,html.cn-hud-hidden video::-webkit-media-controls-panel{display:none!important;opacity:0!important;visibility:hidden!important;-webkit-appearance:none!important}video::-webkit-media-controls,video::-webkit-media-controls-enclosure,video::-webkit-media-controls-panel,video::-webkit-media-controls-overlay-play-button{display:none!important;-webkit-appearance:none!important}';
+    style.textContent = 'button,a,select,[role="button"],[role="menuitem"],[role="option"],[class*="episode" i],[class*="server" i],[class*="dropdown" i]{opacity:1!important;visibility:visible!important;pointer-events:auto!important}button:focus,a:focus,select:focus,[role="button"]:focus,[role="menuitem"]:focus,[role="option"]:focus,[onclick]:focus,[tabindex]:focus,li:focus{outline:3px solid #74a0ff!important;outline-offset:2px!important;border-radius:8px!important;background-color:rgba(76,130,255,.25)!important}html.cn-hud-hidden [data-cn-hud-control="1"]{opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:opacity .25s ease!important}html.cn-hud-hidden video::-webkit-media-controls,html.cn-hud-hidden video::-webkit-media-controls-enclosure,html.cn-hud-hidden video::-webkit-media-controls-panel{display:none!important;opacity:0!important;visibility:hidden!important;-webkit-appearance:none!important}video::-webkit-media-controls,video::-webkit-media-controls-enclosure,video::-webkit-media-controls-panel,video::-webkit-media-controls-overlay-play-button{display:none!important;-webkit-appearance:none!important}';
     (doc.head || doc.documentElement).appendChild(style);
     const controlSelector = 'button,a,select,[role="button"],[role="menuitem"],[role="option"],[onclick],[tabindex],li,.item';
     const menuSelector = '[role="menu"],[role="listbox"],.dropdown-menu,[class*="language-menu" i],[class*="server-menu" i]';
@@ -161,58 +148,11 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       video.removeAttribute("controls");
       if (!video.hasAttribute("controlslist")) video.setAttribute("controlslist","nodownload noplaybackrate noremoteplayback");
     });
-    const hideVolumeControls = () => doc.querySelectorAll(volumeSelector).forEach(el => {
-      const owner=el.closest("button,[role='button'],label,input[type='range'],[role='slider']");
-      [el,owner].filter(Boolean).filter(target => !target.matches("video,iframe") && !target.querySelector?.("video,iframe")).forEach(target => target.classList.add("cn-volume-hidden"));
-    });
     const promoteVisibleControls = () => visibleControls().forEach(el => { if (el.tabIndex !== 0) el.tabIndex = 0; });
-    const refreshPlayerControls = () => { hideNativeVideoControls(); hideVolumeControls(); promoteVisibleControls(); bindVideoTime(); };
+    const refreshPlayerControls = () => { hideNativeVideoControls(); promoteVisibleControls(); };
     refreshPlayerControls();
     new MutationObserver(refreshPlayerControls).observe(doc.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["class","style","hidden","aria-hidden","controls"]});
     const view = doc.defaultView;
-    const diag = { error: "" };
-    const diagPath = input => {
-      try {
-        const raw = typeof input === "string" ? input : input && input.url ? input.url : "";
-        const url = new URL(raw, view.location.href);
-        return url.pathname + url.search;
-      } catch (_) { return "recurso interno"; }
-    };
-    const diagError = message => {
-      if (!diag.error) diag.error = String(message || "Error de red").slice(0, 180);
-    };
-    const nativeFetch = view.fetch;
-    if (typeof nativeFetch === "function") view.fetch = function(...args) {
-      return nativeFetch.apply(view, args).then(response => {
-        if (response && response.status >= 400) diagError("Error " + response.status + " en " + diagPath(args[0]));
-        return response;
-      }, error => {
-        diagError("Fallo de red en " + diagPath(args[0]) + (error && error.message ? ": " + error.message : ""));
-        throw error;
-      });
-    };
-    const NativeXHR = view.XMLHttpRequest;
-    if (NativeXHR && NativeXHR.prototype) {
-      const originalOpen = NativeXHR.prototype.open, originalSend = NativeXHR.prototype.send;
-      NativeXHR.prototype.open = function(method, url, ...rest) { this.__cnUrl = url; return originalOpen.call(this, method, url, ...rest); };
-      NativeXHR.prototype.send = function(...args) {
-        this.addEventListener("load", () => { if (this.status >= 400) diagError("Error " + this.status + " en " + diagPath(this.__cnUrl)); });
-        this.addEventListener("error", () => diagError("Fallo de red en " + diagPath(this.__cnUrl)));
-        return originalSend.apply(this, args);
-      };
-    }
-    view.addEventListener("error", event => { if (event.message || event.error) diagError(event.message || "Error de JavaScript"); }, true);
-    view.addEventListener("unhandledrejection", event => diagError(event.reason && event.reason.message ? event.reason.message : event.reason || "Promesa rechazada"), true);
-    setTimeout(() => {
-      if (!diag.error || doc.querySelector("[data-cn-diagnostic]")) return;
-      const text = ((doc.body && doc.body.innerText) || "").toLocaleLowerCase("es");
-      if (!text.includes("verificando servidores") && !text.includes("espere")) return;
-      const box = doc.createElement("div");
-      box.setAttribute("data-cn-diagnostic", "1");
-      box.textContent = diag.error;
-      box.style.cssText = "position:fixed;left:24px;bottom:64px;z-index:2147483647;max-width:60vw;padding:8px 12px;border:1px solid #a44;border-radius:8px;background:rgba(20,8,8,.92);color:#fff;font:14px/1.3 sans-serif;pointer-events:none";
-      (doc.body || doc.documentElement).appendChild(box);
-    }, 10000);
     const movePlayerFocus = direction => {
       const controls = visibleControls();
       const active = doc.activeElement || doc.body;
@@ -258,13 +198,12 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
     };
     let subtitlesEnabled = false;
     const toggleSubtitles = (enabled, language = "auto") => {
-      let tracks = [];
-      try { tracks = [...doc.querySelectorAll("video")].flatMap(video => Array.from(video.textTracks || []).map(track => ({video,track}))); } catch (_) { tracks = []; }
+      const tracks = [...doc.querySelectorAll("video")].flatMap(video => Array.from(video.textTracks || []).map(track => ({video,track})));
       if (tracks.length) {
         const preferred = language && language !== "auto"
           ? tracks.find(({track}) => (track.language || "").toLowerCase().startsWith(language.toLowerCase()))
           : tracks.find(({track}) => /^(es|spa|lat)(-|$)/i.test(track.language || "")) || tracks[0];
-        tracks.forEach(item => { try { item.track.mode = enabled && item === preferred ? "showing" : "disabled"; } catch (_) {} });
+        tracks.forEach(item => { item.track.mode = enabled && item === preferred ? "showing" : "disabled"; });
       }
       if (!tracks.length) {
         const selector='[aria-label*="subt" i],[aria-label*="caption" i],[title*="subt" i],[title*="caption" i],.vjs-subs-caps-button,[class*="subtitle" i],[class*="caption" i]';
@@ -281,7 +220,7 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       if (now - lastBackPressAt <= 1400) { lastBackPressAt = 0; send("cinenova-exit-player"); }
       else { lastBackPressAt = now; send("cinenova-player-back-confirmation"); }
     };
-    const hudSelector = 'header,nav,button,a,select,input,[role="button"],[role="menuitem"],[role="option"],[role="slider"],[role="tab"],[aria-label],[onclick],[tabindex],li,.item,[class*="control" i],[class*="menu" i],[class*="server" i],[class*="language" i],[class*="episode" i],[class*="toolbar" i],[class*="subtitle" i],[class*="progress" i],[class*="volume" i],[class*="seek" i],[class*="overlay" i],[class*="duration" i],[class*="timestamp" i],[id*="control" i],[id*="progress" i],[id*="volume" i],[id*="subtitle" i],[id*="time" i]';
+    const hudSelector = 'header,nav,button,a,select,[role="button"],[role="menuitem"],[role="option"],[onclick],[tabindex],li,.item,[class*="control" i],[class*="menu" i],[class*="server" i],[class*="language" i],[class*="episode" i],[class*="toolbar" i],[class*="subtitle" i],[class*="progress" i],[class*="volume" i],[class*="seek" i],[class*="overlay" i],[id*="control" i],[id*="progress" i],[id*="volume" i],[id*="subtitle" i]';
     const collectHudControls = () => [...doc.querySelectorAll(hudSelector)].filter(el => {
       if (el.matches("html,body,iframe,video") || !el.getClientRects().length) return false;
       const style = doc.defaultView.getComputedStyle(el);
@@ -325,6 +264,7 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       if (hudWasHidden) { event.preventDefault(); event.stopImmediatePropagation(); visibleControls()[0]?.focus({preventScroll:true}); return; }
       if (event.key === "Enter" && isSeekbar(doc.activeElement)) { event.preventDefault(); event.stopImmediatePropagation(); seekProgress(doc.activeElement,"Enter"); return; }
       if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && isSeekbar(doc.activeElement)) { event.preventDefault(); event.stopImmediatePropagation(); seekProgress(doc.activeElement, event.key); return; }
+      if ((event.key === "ArrowUp" || event.key === "ArrowDown") && isVolumeControl(doc.activeElement)) { event.preventDefault(); event.stopImmediatePropagation(); adjustVolume(doc.activeElement,event.key); return; }
       if (arrows.includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); movePlayerFocus(event.key); return; }
       if (event.key === "Enter") { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); activatePlayerControl(); }
       else if (event.key === "MediaPlayPause") { event.preventDefault(); event.stopImmediatePropagation(); send("cinenova-player-activity"); toggleVideoPlayback(); }
@@ -353,12 +293,8 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
     new MutationObserver(() => doc.querySelectorAll("iframe").forEach(observeFrame)).observe(doc.documentElement, {childList:true,subtree:true});
     view.addEventListener("message", event => {
       if (event.source !== view.parent) {
-        if (event.data?.type === "cinenova-player-time") sendData(event.data);
-        else if (event.data?.type === "cinenova-subtitle-options") send("cinenova-subtitle-options");
+        if (event.data?.type === "cinenova-subtitle-options") send("cinenova-subtitle-options");
         return;
-      }
-      if (event.data?.type === "cinenova-player-context") {
-        doc.querySelectorAll("iframe").forEach(frame=>{try{frame.contentWindow?.postMessage(event.data,"*");}catch(_){}}); return;
       }
       if (event.data?.type === "cinenova-toggle-subtitles") { toggleSubtitles(Boolean(event.data.enabled), event.data.language || "auto"); return; }
       if (event.data?.type === "cinenova-show-controls") {
@@ -388,6 +324,7 @@ UNLIMPLAY_TV_SCRIPT = r'''<script data-cinenova-player-bridge>
       if (key === "Enter" && isSeekbar(doc.activeElement)) { seekProgress(doc.activeElement,"Enter"); return; }
       if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Enter"," ","MediaPlayPause"].includes(key)) return;
       if ((key === "ArrowLeft" || key === "ArrowRight") && isSeekbar(doc.activeElement)) { seekProgress(doc.activeElement, key); return; }
+      if ((key === "ArrowUp" || key === "ArrowDown") && isVolumeControl(doc.activeElement)) { adjustVolume(doc.activeElement,key); return; }
       if (arrows.includes(key)) { movePlayerFocus(key); return; }
       activatePlayerControl();
     });
@@ -614,10 +551,8 @@ class PeliskongHandler(SimpleHTTPRequestHandler):
                     text = text.replace("http://unlimplay.com", proxy_origin)
                     text = text.replace("https:\\/\\/unlimplay.com", proxy_origin.replace("/", "\\/"))
                     text = text.replace("http:\\/\\/unlimplay.com", proxy_origin.replace("/", "\\/"))
-                    text = re.sub(r"(?P<q>[\"'`])(?P<slash>\\?)/(?!/|unlimplay/)(?=[A-Za-z0-9_.-])",
-                                  lambda m: m.group("q") + m.group("slash") + "/unlimplay/", text)
-                    text = re.sub(r"(?P<prefix>\burl\(\s*)(?P<q>[\"'`]?)(?P<slash>\\?)/(?!/|unlimplay/)(?=[A-Za-z0-9_.-])",
-                                  lambda m: m.group("prefix") + m.group("q") + m.group("slash") + "/unlimplay/", text, flags=re.I)
+                    text = re.sub(r"(?P<q>[\"'`])(?P<slash>\\?/)(?=(?:f\.php|sw-adblock\.js|img/|cdn-cgi/))",
+                                  lambda m: m.group("q") + m.group("slash") + "unlimplay/", text)
                     text = re.sub(r"scope\s*:\s*([\"'])/([\"'])",
                                   r"scope: \1/unlimplay/\2", text)
                     if "text/html" in content_type.lower() and parsed.path.startswith(UNLIMPLAY_PREFIX + "/"):

@@ -4,9 +4,9 @@
   "private": true,
   "description": "CINENOVA híbrida para Android táctil y Android TV",
   "scripts": {
-    "config:env": "node scripts/generate-env-config.mjs",
+    "config:env": "node scripts/generate-env-config.mjs && npm run build:web",
     "build:web": "node scripts/build-web.mjs",
-    "sync:android": "npm run config:env && cap sync android",
+    "sync:android": "node scripts/generate-env-config.mjs && cap sync android",
     "android": "cap open android"
   },
   "dependencies": {

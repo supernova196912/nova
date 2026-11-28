@@ -1135,6 +1135,11 @@ function makePlayerContext(type,season,episode,metadata={}){
   return {id:base.id,type,title:base.title,subtitle:`${season}x${episode} · ${name}`,runTime:runtime,next};
 }
 function sendPlayerContext(frame){ if(currentPlayerContext) frame?.contentWindow?.postMessage({type:"cinenova-player-context",...currentPlayerContext},"*"); }
+function playerDisplayTitle(context, season, episode){
+  const title = String(context?.title || "CINENOVA").trim() || "CINENOVA";
+  if (context?.type === "tv") return `${title} · ${Number(season) || 1}x${Number(episode) || 1}`;
+  return title;
+}
 function startDetailPlayback(id, type, season = 1, episode = 1, metadata = {}){
   const numericId = String(id).match(/^\d+/)?.[0] || "";
   if (!numericId) return toast("No se pudo identificar este título.");
@@ -1142,12 +1147,19 @@ function startDetailPlayback(id, type, season = 1, episode = 1, metadata = {}){
   lastPlaybackTrigger = document.activeElement;
   if(currentDetailContext) currentDetailContext.id=id;
   currentPlayerContext=makePlayerContext(type,season,episode,metadata);
+  const displayTitle=playerDisplayTitle(currentPlayerContext, season, episode);
   $(".player-next-ep-btn")?.setAttribute("hidden","");
   const overlayPlayback = isNativeApp() || isTvMode;
   const path = type === "tv" ? `f/embed/tv/${id}/${season}/${episode}` : `f/embed/movie/${id}`;
   const gatewaySrc = gatewayEmbedSrc(type, id, season, episode);
   const playerURL = new URL(gatewaySrc || unlimplayUrl(path), location.href);
   if (!gatewaySrc && (isTvMode || isNativeApp())) playerURL.searchParams.set("cn_tv", "1");
+  const gatewayNative = Boolean(gatewaySrc) && isNativeApp();
+  if (gatewayNative){
+    playerURL.searchParams.set("title", displayTitle);
+    playerURL.searchParams.set(isTvMode ? "cn_tv" : "cn_app", "1");
+  }
+  document.body.classList.toggle("gateway-player-active", gatewayNative);
   const src = playerURL.href;
   if (overlayPlayback){
     $(".app-player-overlay")?.remove();
@@ -1263,6 +1275,7 @@ window.cinenovaExitPlayerFullscreen = () => {
   $$(".player-frame.player-fullscreen").forEach(player => player.classList.remove("player-fullscreen"));
   $$(".app-player-overlay").forEach(player => { $$("video", player).forEach(video => { try{ video.pause(); }catch(e){} }); const loader=$(".player-loader",player); if(loader){ clearTimeout(loader._debugTimer); removePlayerLoader(loader); } $("#playerDebugInfo",player)?.remove(); player.remove(); });
   frame?.blur();
+  document.body.classList.remove("gateway-player-active");
   window.CinenovaTvRemote?.setPlayerFullscreen(false);
   if (isTvMode) requestAnimationFrame(() => {
     const target = lastPlaybackTrigger?.isConnected ? lastPlaybackTrigger : $("[data-act='play-detail']") || $(".episode-card");

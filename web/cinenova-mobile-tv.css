@@ -236,6 +236,10 @@ body.native-app .player-frame.player-fullscreen { box-shadow: none; }
 .player-hud.visible,.player-hud:focus-within { opacity:1; transform:none; pointer-events:auto; }
 .player-hud button { pointer-events:auto; min-height:48px; padding:0 18px; border:1px solid rgba(255,255,255,.22); border-radius:999px; background:rgba(7,11,22,.82); color:#fff; font-size:15px; font-weight:750; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
 .player-hud button:focus-visible { outline:3px solid #74a0ff; outline-offset:3px; box-shadow:0 0 18px rgba(76,130,255,.55); }
+body.native-app.gateway-player-active .player-title { display:none !important; }
+body.native-app .player-frame[data-gateway-player="1"] .player-now-playing,
+body.native-app .player-frame[data-gateway-player="1"] .player-exit,
+body.native-app .player-frame[data-gateway-player="1"] .player-exit-btn { display:none !important; }
 
 .player-controls {
   align-items: end;

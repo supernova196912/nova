@@ -6,6 +6,8 @@ import android.app.UiModeManager;
 import android.content.Context;
 import android.os.Bundle;
 import android.content.res.Configuration;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.os.StatFs;
 import android.os.SystemClock;
@@ -648,13 +650,14 @@ public class MainActivity extends BridgeActivity {
                 + "function reportManifest(win,t,u){try{var s=String(t||'');var b=String(u||here(win));if(!isM3u8(s)||skip(b))return;var a=api(win);if(a)a.reportDetectedManifest(ITEM,s,b,String((win.navigator&&win.navigator.userAgent)||navigator.userAgent||''));}catch(e){}}"
                 + "function maybeText(win,u,ct,res){var lower=text(u),type=text(ct),len=0;try{len=Number(res.headers.get('content-length'))||0;}catch(e){}if(lower.indexOf('.mp4')>=0||lower.indexOf('.webm')>=0||type.indexOf('video/')>=0||type.indexOf('image/')>=0)return;if(lower.indexOf('.m3u8')>=0||lower.indexOf('playlist')>=0||lower.indexOf('master')>=0||lower.indexOf('manifest')>=0||lower.indexOf('index-')>=0||lower.indexOf('.txt')>=0||type.indexOf('text/plain')>=0||type.indexOf('octet-stream')>=0||!ct||(len>0&&len<1048576)){try{res.clone().text().then(function(body){if(isM3u8(body))reportManifest(win,body,u);}).catch(function(){});}catch(e){}}}"
                 + "function silence(win){try{var doc=win.document;if(!doc)return;var proto=win.HTMLMediaElement&&win.HTMLMediaElement.prototype;if(proto&&!proto.__cnVaultMutedPlay){var originalPlay=proto.play;proto.play=function(){try{this.muted=true;this.volume=0;}catch(e){}return originalPlay.apply(this,arguments);};proto.__cnVaultMutedPlay=true;}var nodes=doc.querySelectorAll('video,audio');for(var i=0;i<nodes.length;i++){try{var el=nodes[i];el.muted=true;el.volume=0;el.removeAttribute('autoplay');el.style.visibility='hidden';}catch(e){}}}catch(e){}}"
-                + "function hookWindow(win){try{if(!win)return;if(win.__cnVaultHook&&win.__cnVaultDoc===win.document){silence(win);return;}win.__cnVaultHook=true;win.__cnVaultDoc=win.document;"
+                + "function autoPlay(win){try{var doc=win.document;if(!doc)return;var sels=['#pbtn','.pbtn','[data-play]','.jw-icon-display','button[aria-label*=\"Play\" i]'];for(var i=0;i<sels.length;i++){var buttons=doc.querySelectorAll(sels[i]);for(var j=0;j<buttons.length;j++){var button=buttons[j];if(button.__cnAutoClicked)continue;button.__cnAutoClicked=true;try{button.click();}catch(e){}}}}catch(e){}}"
+                + "function hookWindow(win){try{if(!win)return;if(win.__cnVaultHook&&win.__cnVaultDoc===win.document){silence(win);autoPlay(win);return;}win.__cnVaultHook=true;win.__cnVaultDoc=win.document;"
                 + "var of=win.fetch;if(typeof of==='function'){win.fetch=function(){var args=arguments;var u=args[0];try{u=typeof u==='string'?u:(u&&u.url)||String(u);}catch(e){}var pending=of.apply(this,args);if(!pending||typeof pending.then!=='function')return pending;return pending.then(function(res){try{var ct=res.headers&&res.headers.get?res.headers.get('content-type'):'';if(isMediaType(ct))reportStream(win,u);else maybeText(win,u,ct,res);}catch(e){}return res;});};}"
                 + "var OX=win.XMLHttpRequest;if(OX&&OX.prototype){var oo=OX.prototype.open,os=OX.prototype.send;OX.prototype.open=function(m,u){this.__cnUrl=u;return oo.apply(this,arguments);};OX.prototype.send=function(){var xhr=this;try{xhr.addEventListener('load',function(){try{var ct=xhr.getResponseHeader('content-type')||'';var u=xhr.responseURL||xhr.__cnUrl||'';if(isMediaType(ct)){reportStream(win,u);}else{var lower=text(u),type=text(ct);if(lower.indexOf('.mp4')<0&&lower.indexOf('.webm')<0&&type.indexOf('video/')<0&&type.indexOf('image/')<0&&(lower.indexOf('.m3u8')>=0||lower.indexOf('playlist')>=0||lower.indexOf('master')>=0||lower.indexOf('manifest')>=0||lower.indexOf('index-')>=0||lower.indexOf('.txt')>=0||type.indexOf('text/plain')>=0||type.indexOf('octet-stream')>=0||!ct)){var body='';try{if(xhr.responseType===''||xhr.responseType==='text')body=xhr.responseText||'';}catch(e){}if(isM3u8(body))reportManifest(win,body,u);}}}catch(e){}});}catch(e){}return os.apply(this,arguments);};}"
                 + "var U=win.URL;if(U&&typeof U.createObjectURL==='function'){var ou=U.createObjectURL;U.createObjectURL=function(obj){try{if(obj&&typeof obj.text==='function'){obj.text().then(function(t){reportManifest(win,t,here(win));}).catch(function(){});}}catch(e){}return ou.apply(this,arguments);};}"
-                + "silence(win);}catch(e){}}"
+                + "silence(win);autoPlay(win);}catch(e){}}"
                 + "function installAt(win){try{hookWindow(win);var doc=win.document;var frames=doc.querySelectorAll('iframe,frame');for(var i=0;i<frames.length;i++){try{installAt(frames[i].contentWindow);}catch(e){}}}catch(e){}}"
-                + "if(!window.__cnVaultTimer)window.__cnVaultTimer=setInterval(function(){installAt(window);},250);installAt(window);return true;})()";
+                + "if(!window.__cnVaultTimer)window.__cnVaultTimer=setInterval(function(){installAt(window);},500);installAt(window);return true;})()";
         }
 
         private static final String AUTOPLAY_JS = "(function(){"
@@ -672,6 +675,15 @@ public class MainActivity extends BridgeActivity {
             final StreamInfo[] found = new StreamInfo[1];
             final CountDownLatch latch = new CountDownLatch(1);
             activeLatch = latch;
+            final Handler timeoutHandler = new Handler(Looper.getMainLooper());
+            final Runnable timeoutRunnable = () -> {
+                if (captured.get() || destroyed[0]) return;
+                destroyed[0] = true;
+                Log.d("CinenovaVault", "Timeout estricto de 36 s sin media para " + itemId);
+                runOnUiThread(() -> destroyProbe(probeHolder[0]));
+                latch.countDown();
+            };
+            timeoutHandler.postDelayed(timeoutRunnable, 36000L);
             runOnUiThread(() -> {
                 try {
                     WebView probe = new WebView(MainActivity.this);
@@ -770,8 +782,8 @@ public class MainActivity extends BridgeActivity {
                 }
             });
             try {
-                if (!latch.await(36, TimeUnit.SECONDS)) {
-                    Log.d("CinenovaVault", "Timeout total de extracción (36 s) para " + itemId);
+                if (!latch.await(38, TimeUnit.SECONDS)) {
+                    Log.d("CinenovaVault", "Timeout de respaldo de extracción para " + itemId);
                     runOnUiThread(() -> destroyProbe(probeHolder[0]));
                     return null;
                 }
@@ -1388,6 +1400,10 @@ public class MainActivity extends BridgeActivity {
                 markError(record, "source_write_failed");
                 return false;
             }
+            record.status = "downloading";
+            record.errorReason = "";
+            syncRecord(record);
+            emitProgress(record, "downloading", "downloading");
             DownloadTask task = new DownloadTask(record, info, this);
             synchronized (tasks) { tasks.put(record.itemId, task); }
             acquireWake();
@@ -1456,24 +1472,30 @@ public class MainActivity extends BridgeActivity {
                 }
                 emitProgress(record, "downloading", "extracting");
                 final DownloadRecord pending = record;
+                String primaryUrl = embedUrl == null ? "" : embedUrl;
                 String fallbackUrl = "";
                 String fallbackUrl2 = "";
                 try {
-                    Uri embed = Uri.parse(embedUrl);
+                    Uri embed = Uri.parse(embedUrl == null ? "" : embedUrl);
                     String scheme = embed.getScheme();
                     String authority = embed.getAuthority();
                     if (scheme != null && authority != null) {
                         String origin = scheme + "://" + authority;
+                        String unlimPath = "tv".equals(mediaType)
+                            ? "/p/unlimplay/f/embed/tv/" + tmdbId + "/" + season + "/" + episode
+                            : "/p/unlimplay/f/embed/movie/" + tmdbId;
                         String tukiPath = "tv".equals(mediaType)
                             ? "/p/tukiplay/embed/tv/" + tmdbId + "/" + season + "/" + episode
                             : "/p/tukiplay/embed/movie/" + tmdbId;
                         String embedPath = "tv".equals(mediaType)
-                            ? "/p/2embed/embed/tv/" + tmdbId + "/" + season + "/" + episode
+                            ? "/p/2embed/embedtv/" + tmdbId + "?s=" + season + "&e=" + episode
                             : "/p/2embed/embed/" + tmdbId;
+                        primaryUrl = origin + unlimPath;
                         fallbackUrl = origin + tukiPath;
                         fallbackUrl2 = origin + embedPath;
                     }
                 } catch (Exception ignored) {}
+                final String primary = primaryUrl;
                 final String fallback = fallbackUrl;
                 final String fallback2 = fallbackUrl2;
                 executor.execute(() -> {
@@ -1481,7 +1503,7 @@ public class MainActivity extends BridgeActivity {
                     activeExtractor = extractor;
                     StreamInfo info;
                     try {
-                        info = extractor.extract(embedUrl);
+                        info = extractor.extract(primary);
                     } finally {
                         if (activeExtractor == extractor) activeExtractor = null;
                     }
@@ -1492,7 +1514,7 @@ public class MainActivity extends BridgeActivity {
                     synchronized (this) {
                         if (startedItems.contains(itemId)) return;
                     }
-                    markError(pending, "No se detectó stream reproducible en este servidor");
+                    markError(pending, "No se encontró un enlace descargable en los servidores");
                 });
                 JSONObject accepted = new JSONObject();
                 try {

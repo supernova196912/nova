@@ -306,12 +306,15 @@ async function startOfflineDownload(meta){
   const episode = Number(meta.episode) || 0;
   const embedUrl = gatewayEmbedSrc(mediaType, tmdbId, season, episode);
   if (!embedUrl) return toast("No se pudo preparar la descarga.");
-  await runReleaseGate("download", meta, async () => {
+  await runReleaseGate("download", meta, async (releaseToken) => {
+    const deviceId = gateDeviceId();
+    const separator = embedUrl.includes("?") ? "&" : "?";
+    const downloadUrl = `${embedUrl}${separator}rt=${encodeURIComponent(releaseToken)}&deviceId=${encodeURIComponent(deviceId)}`;
     const payload = {
       itemId: meta.itemId || "", tmdbId, mediaType, season, episode,
       title: String(meta.title || ""), posterPath: String(meta.posterPath || "")
     };
-    const result = vaultResult(vaultCall("startDownload", JSON.stringify(payload), embedUrl));
+    const result = vaultResult(vaultCall("startDownload", JSON.stringify(payload), downloadUrl));
     if (!result.ok){
       toast(result.reason === "duplicate" ? "Este título ya está en Descargas"
         : result.reason === "insufficient_storage" ? "Espacio insuficiente en el dispositivo (se requieren al menos 2.5 GB libres)"
@@ -443,9 +446,11 @@ function downloadCardHTML(item){
     : `<div class="noimg">${esc(title)}</div>`;
   const subtitle = item.mediaType === "tv" ? `T${Number(item.season) || 1} · E${Number(item.episode) || 1}` : "Película";
   const progress = Math.max(0, Math.min(100, Number(item.progress) || 0));
+  const reasonText = esc(downloadErrorText(item.errorReason));
+  const reasonHTML = item.errorReason ? `<span class="download-error">${reasonText}</span>` : "";
   let stateHTML = "", controlsHTML = "";
   if (active){
-    stateHTML = `<div class="download-progress"><div class="download-bar"><i style="width:${progress}%"></i></div><span class="download-progress-text"><b data-dl-progress>${progress}%</b> · <span data-dl-bytes>${fmtDownloadBytes(item.bytesDownloaded)} / ${fmtDownloadBytes(item.totalBytes)}</span></span></div>`;
+    stateHTML = `<div class="download-progress"><div class="download-bar"><i style="width:${progress}%"></i></div><span class="download-progress-text"><b data-dl-progress>${progress}%</b> · <span data-dl-bytes>${fmtDownloadBytes(item.bytesDownloaded)} / ${fmtDownloadBytes(item.totalBytes)}</span></span></div>${status === "paused" ? reasonHTML : ""}`;
     controlsHTML = `<button class="btn ghost" data-vault="${status === "paused" ? "resume" : "pause"}" data-item-id="${esc(item.itemId)}" type="button">${status === "paused" ? "Reanudar" : "Pausar"}</button>
       <button class="btn ghost download-remove" data-vault="delete" data-item-id="${esc(item.itemId)}" type="button">✕ Cancelar y borrar</button>`;
   } else if (status === "ready"){
@@ -457,7 +462,7 @@ function downloadCardHTML(item){
     controlsHTML = `<button class="btn primary" data-vault="renew" data-item-id="${esc(item.itemId)}" type="button">↻ Renovar (1 anuncio)</button>
       <button class="btn ghost download-remove" data-vault="delete" data-item-id="${esc(item.itemId)}" type="button">🗑 Borrar</button>`;
   } else {
-    stateHTML = `<span class="download-state dl-error">Error</span><span class="download-error">${esc(downloadErrorText(item.errorReason))}</span>`;
+    stateHTML = `<span class="download-state dl-error">Error</span><span class="download-error">${reasonText}</span>`;
     controlsHTML = `<button class="btn primary" data-vault="retry" data-item-id="${esc(item.itemId)}" type="button">↻ Reintentar</button>
       <button class="btn ghost download-remove" data-vault="delete" data-item-id="${esc(item.itemId)}" type="button">🗑 Borrar</button>`;
   }

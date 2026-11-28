@@ -14,6 +14,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.Signature;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.webkit.CookieManager;
@@ -598,10 +599,16 @@ public class MainActivity extends BridgeActivity {
 
     /** WebView oculto que captura el primer stream real; nunca reenvía los spots del Gateway. */
     private final class StreamExtractor {
+        private static final String AUTOPLAY_JS = "(function(){"
+            + "var sels=['#pbtn','.play-btn','[data-play]','.vjs-big-play-button','.jw-display-icon-container'];"
+            + "for(var i=0;i<sels.length;i++){var b=document.querySelector(sels[i]);if(b){try{b.click();}catch(e){}break;}}"
+            + "var v=document.querySelector('video');if(v){try{v.muted=true;var p=v.play();if(p&&p.catch)p.catch(function(){});}catch(e){}}"
+            + "var mid=document.elementFromPoint((window.innerWidth||2)/2,(window.innerHeight||2)/2);"
+            + "if(mid){try{mid.click();}catch(e){}}return true;})()";
+
         StreamInfo extract(String embedUrl) {
             if (embedUrl == null || embedUrl.isEmpty()) return null;
             final WebView[] probeHolder = new WebView[1];
-            final View[] hostHolder = new View[1];
             final boolean[] destroyed = new boolean[1];
             final StreamInfo[] found = new StreamInfo[1];
             final CountDownLatch latch = new CountDownLatch(1);
@@ -617,16 +624,35 @@ public class MainActivity extends BridgeActivity {
                     settings.setUserAgentString(VAULT_USER_AGENT);
                     settings.setSupportMultipleWindows(false);
                     settings.setJavaScriptCanOpenWindowsAutomatically(false);
-                    FrameLayout host = new FrameLayout(MainActivity.this);
-                    host.setVisibility(View.INVISIBLE);
-                    host.addView(probe, new FrameLayout.LayoutParams(1, 1));
-                    hostHolder[0] = host;
-                    ((ViewGroup) getWindow().getDecorView()).addView(
-                        host, new FrameLayout.LayoutParams(1, 1));
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(probe, true);
+                    probe.setVisibility(View.INVISIBLE);
+                    ViewGroup root = findViewById(android.R.id.content);
+                    root.addView(probe, new FrameLayout.LayoutParams(1, 1));
+                    final Runnable autoplay = () -> {
+                        if (destroyed[0]) return;
+                        try { probe.evaluateJavascript(AUTOPLAY_JS, null); } catch (Exception ignored) {}
+                        try {
+                            long now = SystemClock.uptimeMillis();
+                            float x = Math.max(0.5f, probe.getWidth() / 2f);
+                            float y = Math.max(0.5f, probe.getHeight() / 2f);
+                            MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0);
+                            probe.dispatchTouchEvent(down);
+                            down.recycle();
+                            MotionEvent up = MotionEvent.obtain(now, now, MotionEvent.ACTION_UP, x, y, 0);
+                            probe.dispatchTouchEvent(up);
+                            up.recycle();
+                        } catch (Exception ignored) {}
+                    };
                     probe.setWebViewClient(new WebViewClient() {
                         @Override
                         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                             return !isAllowedNavigation(request.getUrl());
+                        }
+
+                        @Override
+                        public void onPageFinished(WebView view, String url) {
+                            view.postDelayed(autoplay, 1500L);
+                            view.postDelayed(autoplay, 3500L);
                         }
 
                         @Override
@@ -637,22 +663,16 @@ public class MainActivity extends BridgeActivity {
                                 return new WebResourceResponse("text/plain", "UTF-8",
                                     new ByteArrayInputStream(new byte[0]));
                             }
-                            if (!destroyed[0] && isRealStream(uri)) {
-                                StreamInfo info = new StreamInfo();
-                                info.url = uri.toString();
-                                Map<String, String> headers = request.getRequestHeaders();
-                                info.referer = headers.get("Referer");
-                                info.origin = headers.get("Origin");
-                                String agent = headers.get("User-Agent");
-                                info.userAgent = agent == null || agent.isEmpty() ? VAULT_USER_AGENT : agent;
-                                String path = uri.getPath() == null ? "" : uri.getPath().toLowerCase(Locale.ROOT);
-                                info.streamType = path.endsWith(".m3u8") ? "m3u8" : "mp4";
-                                found[0] = info;
-                                destroyed[0] = true;
-                                latch.countDown();
-                                runOnUiThread(() -> destroyProbe(probeHolder[0], hostHolder[0]));
+                            Map<String, String> headers = request.getRequestHeaders();
+                            if (isRealStream(uri, headers)) {
+                                capture(view, uri, headers, destroyed, found, latch);
+                                return super.shouldInterceptRequest(view, request);
                             }
-                            return super.shouldInterceptRequest(view, request);
+                            WebResourceResponse response = super.shouldInterceptRequest(view, request);
+                            if (response != null && isVideoMime(response.getMimeType())) {
+                                capture(view, uri, headers, destroyed, found, latch);
+                            }
+                            return response;
                         }
                     });
                     probe.loadUrl(embedUrl);
@@ -661,32 +681,76 @@ public class MainActivity extends BridgeActivity {
                 }
             });
             try {
-                if (!latch.await(25, TimeUnit.SECONDS)) {
-                    runOnUiThread(() -> destroyProbe(probeHolder[0], hostHolder[0]));
+                if (!latch.await(30, TimeUnit.SECONDS)) {
+                    runOnUiThread(() -> destroyProbe(probeHolder[0]));
                     return null;
                 }
             } catch (InterruptedException error) {
                 Thread.currentThread().interrupt();
-                runOnUiThread(() -> destroyProbe(probeHolder[0], hostHolder[0]));
+                runOnUiThread(() -> destroyProbe(probeHolder[0]));
                 return null;
             }
             return found[0];
         }
 
-        private boolean isRealStream(Uri uri) {
-            String url = uri.toString().toLowerCase(Locale.ROOT);
-            String path = uri.getPath() == null ? "" : uri.getPath().toLowerCase(Locale.ROOT);
-            boolean media = path.endsWith(".m3u8") || path.endsWith(".mp4")
-                || url.contains(".m3u8?") || url.contains(".mp4?");
-            if (!media) return false;
-            // Los clips del Gateway y el MP4 público de pruebas no son la película.
-            return !url.contains("/v1/stream/") && !url.contains("test-videos.co.uk");
+        private void capture(WebView view, Uri uri, Map<String, String> headers,
+                             boolean[] destroyed, StreamInfo[] found, CountDownLatch latch) {
+            if (destroyed[0]) return;
+            StreamInfo info = new StreamInfo();
+            info.url = uri.toString();
+            info.referer = header(headers, "Referer");
+            info.origin = header(headers, "Origin");
+            String agent = header(headers, "User-Agent");
+            info.userAgent = agent.isEmpty() ? VAULT_USER_AGENT : agent;
+            String url = info.url.toLowerCase(Locale.ROOT);
+            info.streamType = url.contains(".mp4") && !url.contains(".m3u8") ? "mp4" : "m3u8";
+            found[0] = info;
+            destroyed[0] = true;
+            latch.countDown();
+            runOnUiThread(() -> destroyProbe(view));
         }
 
-        private void destroyProbe(WebView probe, View host) {
+        private boolean isRealStream(Uri uri, Map<String, String> headers) {
+            String url = uri.toString().toLowerCase(Locale.ROOT);
+            if (url.contains("test-videos.co.uk") || url.contains("/v1/stream/")) return false;
+            boolean indexManifest = url.contains("index-")
+                && !url.endsWith(".js") && !url.endsWith(".css") && !url.endsWith(".html")
+                && !url.endsWith(".png") && !url.endsWith(".jpg");
+            boolean media = url.contains(".m3u8") || url.contains(".mp4")
+                || url.contains("master.txt") || indexManifest;
+            if (!media) {
+                String accept = header(headers, "Accept").toLowerCase(Locale.ROOT);
+                media = isVideoMime(accept);
+            }
+            return media;
+        }
+
+        private boolean isVideoMime(String value) {
+            String mime = value == null ? "" : value.toLowerCase(Locale.ROOT);
+            return mime.contains("application/vnd.apple.mpegurl")
+                || mime.contains("application/x-mpegurl")
+                || mime.contains("video/mp4");
+        }
+
+        private String header(Map<String, String> headers, String name) {
+            if (headers == null) return "";
+            String direct = headers.get(name);
+            if (direct != null) return direct;
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                if (name.equalsIgnoreCase(entry.getKey())) {
+                    return entry.getValue() == null ? "" : entry.getValue();
+                }
+            }
+            return "";
+        }
+
+        private void destroyProbe(WebView probe) {
             if (probe == null) return;
             try { probe.stopLoading(); } catch (Exception ignored) {}
-            try { ((ViewGroup) getWindow().getDecorView()).removeView(host); } catch (Exception ignored) {}
+            try {
+                ViewParent parent = probe.getParent();
+                if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(probe);
+            } catch (Exception ignored) {}
             try { probe.destroy(); } catch (Exception ignored) {}
         }
     }
@@ -1128,7 +1192,7 @@ public class MainActivity extends BridgeActivity {
                 executor.execute(() -> {
                     StreamInfo info = new StreamExtractor().extract(embedUrl);
                     if (info == null || info.url == null || info.url.isEmpty()) {
-                        markError(pending, "stream_unavailable");
+                        markError(pending, "No se detectó stream reproducible en este servidor");
                         return;
                     }
                     try {
@@ -1284,6 +1348,7 @@ public class MainActivity extends BridgeActivity {
                 detail.put("bytesDownloaded", record.bytesDownloaded);
                 detail.put("totalBytes", record.totalBytes);
                 detail.put("streamType", record.streamType);
+                detail.put("errorReason", record.errorReason == null ? "" : record.errorReason);
                 detail.put("expiresAt", record.expiresAt);
             } catch (Exception ignored) {}
             dispatch("cinenova-download-progress", detail);

@@ -595,3 +595,11 @@ body.tv-mode #hc .hero-arrow { display:grid !important; flex:0 0 44px !important
 body.tv-mode #hc .hero-thumb { flex:0 0 82px !important; width:82px !important; height:50px !important; border-radius:9px !important; }
 html, body { scrollbar-width:none !important; -ms-overflow-style:none !important; }
 html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; width:0 !important; height:0 !important; }
+
+/* OFFLINE VAULT - Android móvil (nunca TV) */
+body.native-app:not(.tv-mode) .episode-card { cursor:pointer; }
+body.native-app:not(.tv-mode) .episode-card .offline-download-btn { width:100%; min-height:34px; margin-top:2px; padding:6px 8px; font-size:11px; justify-content:center; }
+body.native-app:not(.tv-mode) .offline-player-overlay video { width:100%; height:100%; object-fit:contain; background:#000; }
+body.native-app:not(.tv-mode) .offline-player-overlay .player-hud { opacity:1 !important; transform:none !important; pointer-events:auto !important; }
+body.native-app:not(.tv-mode) .downloads-page { padding-bottom:88px; }
+body.native-app:not(.tv-mode) .download-card { background:#111d2e; }

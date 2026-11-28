@@ -21,6 +21,12 @@ const ITEMS = new Map();          // datos mínimos para "Mi lista"
 const cleanup = [];
 let routeToken = 0;
 let episodeRequestToken = 0;
+const VAULT_MIN_FREE_BYTES = 2500000000;
+const GATE_DEVICE_ID_KEY = "cinenova_gate_device_id";
+const RENEW_OFFLINE_MESSAGE = "Conéctate a internet unos segundos para ver 1 anuncio y habilitar la película por 24 horas más";
+let offlineDownloads = [];
+let releaseGateBusy = false;
+let downloadTicker = 0;
 const app = $("#app");
 const KIDS_MODE_KEY = "cinenova-kids-mode";
 const KIDS_PIN_KEY = "cinenova-parent-pin";
@@ -54,6 +60,7 @@ function isNativeApp(){
   return Boolean((window.Capacitor && window.Capacitor.isNativePlatform?.())
     || (location.hostname === "localhost" && /Android/i.test(navigator.userAgent || "")));
 }
+function canUseOfflineDownloads(){ return isNativeApp() && !isTvMode && Boolean(window.CinenovaVault?.isMobileDownloadsSupported?.()); }
 function updateDeviceMode(){
   const ua = navigator.userAgent || "";
   const nativeApp = isNativeApp();
@@ -67,6 +74,10 @@ function updateDeviceMode(){
   document.body.classList.toggle("tv-mode", isTvMode);
   document.body.classList.toggle("kids-mode", kidsModeEnabled);
   const badge = $("#kidsBadge"); if (badge) badge.hidden = !kidsModeEnabled;
+  const downloadsTab = $('[data-r="descargas"]');
+  const offlineReady = canUseOfflineDownloads();
+  if (downloadsTab){ downloadsTab.hidden = !offlineReady; downloadsTab.style.display = offlineReady ? "" : "none"; }
+  updateDownloadBadge();
 }
 function activateNativeTvMode(){
   if (!isNativeApp()) return false;
@@ -146,6 +157,393 @@ async function applyGatewayConfig(data = {}){
   }
   const finalOverride = gatewayUrlOverride(); if (finalOverride) VIDEO_GATEWAY_URL = finalOverride;
 }
+
+/* ===== BÓVEDA OFFLINE (SOLO ANDROID MÓVIL) ===== */
+function vaultCall(name, ...args){
+  try { return window.CinenovaVault?.[name]?.(...args) ?? ""; } catch(e) { return ""; }
+}
+function vaultJson(raw, fallback){
+  try { const parsed = JSON.parse(raw || ""); return parsed ?? fallback; } catch(e) { return fallback; }
+}
+function vaultResult(raw){
+  const data = vaultJson(raw, {});
+  return data && typeof data === "object" ? data : {};
+}
+function loadOfflineDownloads(){
+  if (!canUseOfflineDownloads()){ offlineDownloads = []; updateDownloadBadge(); return; }
+  const parsed = vaultJson(vaultCall("listDownloads"), []);
+  offlineDownloads = Array.isArray(parsed) ? parsed : [];
+  updateDownloadBadge();
+  updateDownloadButtons();
+}
+function refreshDownloads(){
+  if (canUseOfflineDownloads() && (parseHash().parts[0] || "") === "descargas") renderDownloads();
+  else loadOfflineDownloads();
+}
+function fmtDownloadBytes(value){
+  const bytes = Math.max(0, Number(value) || 0);
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  if (bytes >= 1024 ** 2) return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${Math.round(bytes)} B`;
+}
+function fmtStorageGb(value){ return `${((Number(value) || 0) / 1000000000).toFixed(1)} GB`; }
+function remainingText(expiresAt){
+  const left = (Number(expiresAt) || 0) - Date.now();
+  if (left <= 0) return "Disponible por 0h 0m";
+  const hours = Math.floor(left / 3600000);
+  const minutes = Math.floor((left % 3600000) / 60000);
+  return `Disponible por ${hours}h ${minutes}m`;
+}
+function downloadErrorText(reason){
+  const text = String(reason || "");
+  const known = {
+    stream_unavailable:"No se pudo obtener el video",
+    source_write_failed:"No se pudo guardar el video",
+    source_unavailable:"No se pudo reanudar",
+    insufficient_storage:"Espacio insuficiente",
+    invalid_metadata:"Datos inválidos",
+    duplicate:"Ya existe esta descarga"
+  };
+  return known[text] || (text ? text.slice(0, 80) : "Falló la descarga");
+}
+function sameOfflineItem(a, b){
+  if (!a || !b) return false;
+  if (Number(a.tmdbId) !== Number(b.tmdbId)) return false;
+  const mediaType = (a.mediaType === "tv" || b.mediaType === "tv") ? "tv" : "movie";
+  if ((a.mediaType || mediaType) !== mediaType || (b.mediaType || mediaType) !== mediaType) return false;
+  if (mediaType === "tv") return Number(a.season) === Number(b.season) && Number(a.episode) === Number(b.episode);
+  return true;
+}
+function findOfflineDownload(meta){ return offlineDownloads.find(item => sameOfflineItem(item, meta)) || null; }
+function offlineMetaFromElement(el){
+  return {
+    itemId: el.dataset.itemId || "",
+    tmdbId: Number(el.dataset.tmdbId) || 0,
+    mediaType: el.dataset.mediaType === "tv" ? "tv" : "movie",
+    season: Number(el.dataset.season) || 0,
+    episode: Number(el.dataset.episode) || 0,
+    title: el.dataset.title || "",
+    posterPath: el.dataset.posterPath || ""
+  };
+}
+function offlineMetaFromItem(item){
+  return {
+    itemId: item.itemId || "", tmdbId: item.tmdbId, mediaType: item.mediaType,
+    season: item.season, episode: item.episode, title: item.title, posterPath: item.posterPath
+  };
+}
+function gateDeviceId(){
+  let id = "";
+  try { id = String(localStorage.getItem(GATE_DEVICE_ID_KEY) || "").trim(); } catch(e) {}
+  if (!id){
+    try { id = window.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`; } catch(e) { id = `${Date.now()}-${Math.random()}`; }
+    try { localStorage.setItem(GATE_DEVICE_ID_KEY, id); } catch(e) {}
+  }
+  return id;
+}
+async function postGate(path, payload){
+  const base = VIDEO_GATEWAY_URL.replace(/\/+$/, "");
+  const response = await fetch(base + path, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(payload)
+  });
+  let data = {};
+  try { data = await response.json(); } catch(e) {}
+  if (!response.ok || data.ok === false){ const error = new Error(data.error || `HTTP ${response.status}`); error.data = data; error.status = response.status; throw error; }
+  return data;
+}
+function gateBody(action, item){
+  const body = {
+    action,
+    tmdbId: Number(item.tmdbId) || 0,
+    mediaType: item.mediaType === "tv" ? "tv" : "movie",
+    deviceId: gateDeviceId()
+  };
+  if (body.mediaType === "tv"){
+    if (Number(item.season) > 0) body.season = Number(item.season);
+    if (Number(item.episode) > 0) body.episode = Number(item.episode);
+  }
+  return body;
+}
+function updateDownloadBadge(){
+  const tab = $('[data-r="descargas"]');
+  const badge = tab && $(".download-count", tab);
+  if (!badge) return;
+  const count = offlineDownloads.filter(item => ["downloading", "paused", "ready"].includes(item.status)).length;
+  badge.textContent = String(count);
+  badge.hidden = count <= 0;
+}
+function offlineButtonLabel(record){
+  if (!record) return "⬇ Descargar";
+  if (record.status === "downloading" || record.status === "paused") return `Descargando ${Math.max(0, Math.min(100, Number(record.progress) || 0))}%`;
+  return "✓ En Descargas";
+}
+function offlineDownloadButton(meta){
+  const record = findOfflineDownload(meta);
+  const state = !record ? "new" : (["downloading", "paused"].includes(record.status) ? "active" : "saved");
+  return `<button type="button" class="btn ghost offline-download-btn" data-offline-download-btn data-state="${state}" data-act="${record ? "open-downloads" : "offline-download"}" data-item-id="${esc(record?.itemId || "")}" data-tmdb-id="${esc(meta.tmdbId)}" data-media-type="${esc(meta.mediaType)}" data-season="${esc(meta.season || 0)}" data-episode="${esc(meta.episode || 0)}" data-title="${esc(meta.title || "")}" data-poster-path="${esc(meta.posterPath || "")}">${offlineButtonLabel(record)}</button>`;
+}
+function updateDownloadButtons(){
+  $$("[data-offline-download-btn]").forEach(button => {
+    const record = findOfflineDownload(offlineMetaFromElement(button));
+    button.dataset.itemId = record?.itemId || "";
+    button.dataset.state = !record ? "new" : (["downloading", "paused"].includes(record.status) ? "active" : "saved");
+    button.dataset.act = record ? "open-downloads" : "offline-download";
+    button.textContent = offlineButtonLabel(record);
+  });
+}
+async function startOfflineDownload(meta){
+  if (!canUseOfflineDownloads()) return;
+  if (releaseGateBusy) return toast("Hay una operación en curso.");
+  const tmdbId = Number(meta.tmdbId) || 0;
+  if (!tmdbId) return toast("No se pudo identificar este título.");
+  const storage = vaultJson(vaultCall("getStorageInfo"), {});
+  if ((Number(storage.freeBytes) || 0) < VAULT_MIN_FREE_BYTES) return toast("Espacio insuficiente en el dispositivo (se requieren al menos 2.5 GB libres)");
+  const mediaType = meta.mediaType === "tv" ? "tv" : "movie";
+  const season = Number(meta.season) || 0;
+  const episode = Number(meta.episode) || 0;
+  const embedUrl = gatewayEmbedSrc(mediaType, tmdbId, season, episode);
+  if (!embedUrl) return toast("No se pudo preparar la descarga.");
+  await runReleaseGate("download", meta, async () => {
+    const payload = {
+      itemId: meta.itemId || "", tmdbId, mediaType, season, episode,
+      title: String(meta.title || ""), posterPath: String(meta.posterPath || "")
+    };
+    const result = vaultResult(vaultCall("startDownload", JSON.stringify(payload), embedUrl));
+    if (!result.ok){
+      toast(result.reason === "duplicate" ? "Este título ya está en Descargas"
+        : result.reason === "insufficient_storage" ? "Espacio insuficiente en el dispositivo (se requieren al menos 2.5 GB libres)"
+        : "No se pudo iniciar la descarga.");
+      return false;
+    }
+    toast("Descarga iniciada en segundo plano");
+    refreshDownloads();
+    return true;
+  });
+}
+async function runReleaseGate(action, item, onRelease, failureMessage){
+  if (releaseGateBusy) return false;
+  releaseGateBusy = true;
+  let start;
+  try { start = await postGate("/v1/stream/gate/start", gateBody(action, item)); }
+  catch(e){ releaseGateBusy = false; toast(failureMessage || "No se pudo iniciar la compuerta. Intentá de nuevo."); return false; }
+  return new Promise(resolve => {
+    let currentStep = Number(start.currentStep) || 1;
+    let totalSteps = Math.max(1, Number(start.totalSteps) || 1);
+    let clip = start.clip || {};
+    let seconds = Math.max(1, Number(start.skipAfterSeconds) || 5);
+    let timer = 0, ready = false, ended = false, advancing = false, settled = false;
+    openModal(`<section class="release-gate-modal">
+      <h2>${action === "renew" ? "Renovar disponibilidad" : "Preparar descarga"}</h2>
+      <p class="muted">Mirá ${action === "renew" ? "1 video" : "los 2 videos"} para continuar.</p>
+      <div class="release-stage"><video id="gateVideo" autoplay playsinline></video>
+        <div class="release-info"><span id="gateStepLabel">Anuncio 1 de ${totalSteps}</span><span id="gateCountdown">${seconds}s</span></div>
+      </div>
+      <button id="gateSkip" class="btn primary" type="button" disabled>Saltar anuncio en ${seconds}s</button>
+    </section>`, "release-gate-modal", true);
+    const label = $("#gateStepLabel"), counter = $("#gateCountdown"), skip = $("#gateSkip"), video = $("#gateVideo");
+    const stopTimer = () => { if (timer){ clearInterval(timer); timer = 0; } };
+    const settle = async (ok, message) => {
+      if (settled) return;
+      settled = true; stopTimer(); releaseGateBusy = false; modalLocked = false; closeModal();
+      if (message) toast(message);
+      resolve(Boolean(ok));
+    };
+    const advance = async () => {
+      if (advancing || !ready || settled) return;
+      advancing = true; stopTimer(); skip.disabled = true;
+      try {
+        const next = await postGate("/v1/stream/gate/next", { sessionId: start.sessionId, stepCompleted: currentStep });
+        if (next.completed){
+          let ok = false;
+          try { ok = Boolean(await onRelease(next.releaseToken)); } catch(e) { ok = false; }
+          await settle(ok);
+          return;
+        }
+        currentStep = Number(next.currentStep) || currentStep + 1;
+        totalSteps = Math.max(1, Number(next.totalSteps) || totalSteps);
+        clip = next.clip || {};
+        seconds = Math.max(1, Number(next.skipAfterSeconds) || seconds);
+        ready = false; ended = false; advancing = false;
+        showStep();
+      } catch(e){
+        await settle(false, failureMessage || "No se pudo completar la compuerta. Intentá de nuevo.");
+      }
+    };
+    const showStep = () => {
+      label.textContent = `Anuncio ${currentStep} de ${totalSteps}`;
+      counter.textContent = `${seconds}s`;
+      skip.textContent = `Saltar anuncio en ${seconds}s`;
+      skip.disabled = true;
+      video.src = String(clip.url || "");
+      try { video.play?.().catch?.(() => {}); } catch(e) {}
+      let remaining = seconds;
+      stopTimer();
+      timer = setInterval(() => {
+        remaining -= 1;
+        if (remaining > 0){ counter.textContent = `${remaining}s`; skip.textContent = `Saltar anuncio en ${remaining}s`; return; }
+        stopTimer(); ready = true; counter.textContent = "0s"; skip.textContent = "Saltar anuncio"; skip.disabled = false;
+        if (ended) advance();
+      }, 1000);
+    };
+    skip.addEventListener("click", advance);
+    video.addEventListener("ended", () => { ended = true; if (ready) advance(); });
+    video.addEventListener("error", () => { ended = true; if (ready) advance(); });
+    showStep();
+  });
+}
+async function renewExpiredItem(item){
+  if (!canUseOfflineDownloads()) return;
+  if (navigator.onLine === false) return toast(RENEW_OFFLINE_MESSAGE);
+  await runReleaseGate("renew", item, async () => {
+    const result = vaultResult(vaultCall("renewDownload", item.itemId));
+    if (!result.ok){ toast("No se pudo renovar la descarga."); return false; }
+    toast("Disponible por 24 horas más");
+    refreshDownloads();
+    return true;
+  }, RENEW_OFFLINE_MESSAGE);
+}
+async function retryDownload(item){
+  if (!canUseOfflineDownloads()) return;
+  const resumed = vaultResult(vaultCall("resumeDownload", item.itemId));
+  if (resumed.ok){ toast("Descarga reanudada"); refreshDownloads(); return; }
+  vaultCall("deleteDownload", item.itemId);
+  toast("Reintentando descarga");
+  startOfflineDownload(offlineMetaFromItem(item));
+}
+function playOfflineDownload(item){
+  if (!canUseOfflineDownloads() || !item) return;
+  const url = vaultCall("getPlaybackUrl", item.itemId);
+  if (!url){ refreshDownloads(); toast("Esta descarga venció. Renovala para seguir viéndola."); return; }
+  window.cinenovaExitPlayerFullscreen?.();
+  const player = document.createElement("div");
+  player.className = "player-frame player-fullscreen app-player-overlay offline-player-overlay";
+  player.dataset.title = String(item.title || "");
+  const video = document.createElement("video");
+  video.controls = true; video.autoplay = true; video.playsInline = true; video.tabIndex = 0;
+  video.setAttribute("playsinline", ""); video.preload = "auto"; video.src = String(url);
+  const hud = document.createElement("div"); hud.className = "player-hud visible";
+  const exit = document.createElement("button");
+  exit.type = "button"; exit.className = "player-exit-btn"; exit.textContent = "← Salir";
+  exit.setAttribute("aria-label", "Salir del reproductor");
+  exit.addEventListener("click", exitPlayerFullscreen);
+  hud.append(exit); player.append(video, hud); document.body.append(player);
+  window.CinenovaTvRemote?.setPlayerFullscreen(true);
+  try { video.play?.().catch?.(() => {}); } catch(e) {}
+  requestAnimationFrame(() => video.focus({preventScroll:true}));
+}
+function downloadCardHTML(item){
+  const status = ["downloading", "paused", "ready", "expired", "error"].includes(item.status) ? item.status : "error";
+  const active = status === "downloading" || status === "paused";
+  const title = String(item.title || "Descarga");
+  const poster = item.posterPath
+    ? `<img loading="lazy" src="${img(item.posterPath, "w342")}" alt="">`
+    : `<div class="noimg">${esc(title)}</div>`;
+  const subtitle = item.mediaType === "tv" ? `T${Number(item.season) || 1} · E${Number(item.episode) || 1}` : "Película";
+  const progress = Math.max(0, Math.min(100, Number(item.progress) || 0));
+  let stateHTML = "", controlsHTML = "";
+  if (active){
+    stateHTML = `<div class="download-progress"><div class="download-bar"><i style="width:${progress}%"></i></div><span class="download-progress-text"><b data-dl-progress>${progress}%</b> · <span data-dl-bytes>${fmtDownloadBytes(item.bytesDownloaded)} / ${fmtDownloadBytes(item.totalBytes)}</span></span></div>`;
+    controlsHTML = `<button class="btn ghost" data-vault="${status === "paused" ? "resume" : "pause"}" data-item-id="${esc(item.itemId)}" type="button">${status === "paused" ? "Reanudar" : "Pausar"}</button>
+      <button class="btn ghost download-remove" data-vault="delete" data-item-id="${esc(item.itemId)}" type="button">✕ Cancelar y borrar</button>`;
+  } else if (status === "ready"){
+    stateHTML = `<span class="download-state dl-ready">Lista para ver</span><span class="download-time" data-dl-time>${remainingText(item.expiresAt)}</span>`;
+    controlsHTML = `<button class="btn primary" data-vault="watch" data-item-id="${esc(item.itemId)}" type="button">▶ Ver ahora</button>
+      <button class="btn ghost download-remove" data-vault="delete" data-item-id="${esc(item.itemId)}" type="button">🗑 Borrar</button>`;
+  } else if (status === "expired"){
+    stateHTML = `<span class="download-state dl-expired">Vencida (24h cumplidas)</span>`;
+    controlsHTML = `<button class="btn primary" data-vault="renew" data-item-id="${esc(item.itemId)}" type="button">↻ Renovar (1 anuncio)</button>
+      <button class="btn ghost download-remove" data-vault="delete" data-item-id="${esc(item.itemId)}" type="button">🗑 Borrar</button>`;
+  } else {
+    stateHTML = `<span class="download-state dl-error">Error</span><span class="download-error">${esc(downloadErrorText(item.errorReason))}</span>`;
+    controlsHTML = `<button class="btn primary" data-vault="retry" data-item-id="${esc(item.itemId)}" type="button">↻ Reintentar</button>
+      <button class="btn ghost download-remove" data-vault="delete" data-item-id="${esc(item.itemId)}" type="button">🗑 Borrar</button>`;
+  }
+  return `<article class="download-card" data-download-item="${esc(item.itemId)}" data-status="${status}">
+    <div class="download-poster">${poster}</div>
+    <div class="download-info"><h3>${esc(title)}</h3><p class="muted">${esc(subtitle)} · ${fmtDownloadBytes(item.totalBytes)}</p>
+      <div class="download-state-line" data-dl-state>${active ? (status === "paused" ? "Pausada" : "Descargando") : ""}</div>
+      ${stateHTML}<div class="download-controls">${controlsHTML}</div>
+    </div>
+  </article>`;
+}
+function renderDownloads(){
+  if (!canUseOfflineDownloads()) return notFound();
+  loadOfflineDownloads();
+  clearInterval(downloadTicker); downloadTicker = 0;
+  const storage = vaultJson(vaultCall("getStorageInfo"), {});
+  const expiredCount = offlineDownloads.filter(item => item.status === "expired").length;
+  app.innerHTML = `<div class="page downloads-page">
+    <div class="downloads-head"><div><h1>Descargas</h1><p class="muted">${fmtStorageGb(storage.vaultUsedBytes)} usados · ${fmtStorageGb(storage.freeBytes)} libres</p></div>
+      <div class="downloads-head-actions">
+        ${expiredCount ? '<button class="btn ghost" data-vault="delete-expired" type="button">Borrar vencidas</button>' : ""}
+        ${offlineDownloads.length ? '<button class="btn ghost download-remove" data-vault="clear-all" type="button">Vaciar todo</button>' : ""}
+      </div>
+    </div>
+    ${offlineDownloads.length ? `<div class="download-list">${offlineDownloads.map(downloadCardHTML).join("")}</div>` : '<p class="muted">Todavía no descargaste nada. Usá «⬇ Descargar» en una película o episodio.</p>'}
+  </div>`;
+  downloadTicker = setInterval(() => {
+    if ((parseHash().parts[0] || "") !== "descargas") return;
+    $$("[data-dl-time]").forEach(node => {
+      const row = node.closest("[data-download-item]");
+      const item = offlineDownloads.find(x => x.itemId === row?.dataset.downloadItem);
+      if (item) node.textContent = remainingText(item.expiresAt);
+    });
+  }, 60000);
+  cleanup.push(() => clearInterval(downloadTicker));
+}
+function downloadsView(){
+  setSeo("Descargas — CINENOVA", "Gestiona tus descargas offline protegidas.", "/descargas", null, "noindex, follow");
+  renderDownloads();
+}
+function updateDownloadView(info){
+  if (!info?.itemId || (parseHash().parts[0] || "") !== "descargas") return;
+  const row = $$("[data-download-item]").find(node => node.dataset.downloadItem === info.itemId);
+  if (!row || row.dataset.status !== info.status){ renderDownloads(); return; }
+  const progress = Math.max(0, Math.min(100, Number(info.progress) || 0));
+  const bar = $(".download-bar i", row); if (bar) bar.style.width = `${progress}%`;
+  const label = $("[data-dl-progress]", row); if (label) label.textContent = `${progress}%`;
+  const bytes = $("[data-dl-bytes]", row); if (bytes) bytes.textContent = `${fmtDownloadBytes(info.bytesDownloaded)} / ${fmtDownloadBytes(info.totalBytes)}`;
+  const time = $("[data-dl-time]", row); if (time) time.textContent = remainingText(info.expiresAt);
+  const state = $("[data-dl-state]", row); if (state) state.textContent = info.status === "paused" ? "Pausada" : info.status === "downloading" ? "Descargando" : "";
+}
+function handleVaultAction(button){
+  if (!canUseOfflineDownloads()) return;
+  const action = button.dataset.vault, itemId = button.dataset.itemId || "";
+  const item = offlineDownloads.find(entry => entry.itemId === itemId);
+  if (action === "delete"){
+    if (!window.confirm("¿Eliminar esta descarga y liberar espacio?")) return;
+    vaultCall("deleteDownload", itemId); toast("Descarga eliminada"); refreshDownloads(); return;
+  }
+  if (action === "clear-all"){
+    if (!window.confirm("¿Eliminar esta descarga y liberar espacio?")) return;
+    vaultCall("deleteAllDownloads"); toast("Descargas eliminadas"); refreshDownloads(); return;
+  }
+  if (action === "delete-expired"){
+    vaultCall("deleteExpiredDownloads"); toast("Vencidas eliminadas"); refreshDownloads(); return;
+  }
+  if (action === "pause"){ vaultCall("pauseDownload", itemId); toast("Descarga pausada"); refreshDownloads(); return; }
+  if (action === "resume"){ vaultCall("resumeDownload", itemId); toast("Descarga reanudada"); refreshDownloads(); return; }
+  if (action === "watch"){ playOfflineDownload(item); return; }
+  if (action === "renew"){ renewExpiredItem(item); return; }
+  if (action === "retry"){ retryDownload(item); }
+}
+window.addEventListener("cinenova-download-progress", event => {
+  if (!canUseOfflineDownloads() || !event.detail?.itemId) return;
+  const info = event.detail;
+  const at = offlineDownloads.findIndex(item => item.itemId === info.itemId);
+  if (at >= 0) offlineDownloads[at] = {...offlineDownloads[at], ...info};
+  else offlineDownloads.push({...info});
+  updateDownloadBadge(); updateDownloadButtons(); updateDownloadView(info);
+});
+window.addEventListener("cinenova-download-deleted", event => {
+  const id = event.detail?.itemId;
+  if (!id) return;
+  offlineDownloads = offlineDownloads.filter(item => item.itemId !== id);
+  updateDownloadBadge(); updateDownloadButtons(); refreshDownloads();
+});
 async function loadGenres(){
   const [m, t] = await Promise.all([api("/genre/movie/list"), api("/genre/tv/list")]);
   m.genres.forEach(g => GENRES.movie[g.id] = g.name);
@@ -522,7 +920,7 @@ async function detail(type, id){
   if (kidsModeEnabled && !isChildApprovedDetail(d,type)){
     app.innerHTML = `<div class="page"><h1>No disponible en modo infantil</h1><p class="muted">Este título no tiene una clasificación infantil confirmada.</p><a class="btn primary" href="#/">Volver al inicio</a></div>`; return;
   }
-  currentDetailContext = {id,type,title:titleOf(d),runTime:Number(d.episode_run_time?.[0]) || 45};
+  currentDetailContext = {id,type,title:titleOf(d),runTime:Number(d.episode_run_time?.[0]) || 45,posterPath:d.poster_path || ""};
   if (!d.overview){ try{ const en = await api(`/${type}/${id}`, {language:"en-US"}); d.overview = en.overview; }catch(e){} }
   if (t !== routeToken) return;
   remember(d, type);
@@ -596,6 +994,7 @@ async function detail(type, id){
         <p class="overview">${esc(d.overview || "Sin sinopsis disponible.")}</p>
         <div class="actions">
           <button class="btn primary" data-act="play-detail" data-tab="ver" data-target="player-${d.id}" data-type="${type}" data-id="${d.id}">▶ Reproducir</button>
+          ${canUseOfflineDownloads() ? offlineDownloadButton({tmdbId:d.id, mediaType:type, title, posterPath:d.poster_path || ""}) : ""}
           <button class="btn ghost ${fav ? "fav-on" : ""}" data-act="fav" data-type="${type}" data-id="${d.id}">${fav ? "✓ En Mi lista" : "+ Mi lista"}</button>
           ${tvApp ? "" : '<button class="btn ghost" data-act="share">↗ Compartir</button>'}
         </div>
@@ -646,10 +1045,16 @@ async function loadSeason(id, n){
     const s = await api(`/tv/${id}/season/${n}`);
     if (t !== routeToken || request !== episodeRequestToken) return;
     currentEpisodeCount=(s.episodes||[]).length||currentEpisodeCount;
-    box.innerHTML = (s.episodes || []).map(e => `<button class="episode-card" data-act="play-episode" data-type="tv" data-id="${id}" data-season="${n}" data-episode="${e.episode_number}" data-runtime="${Number(e.runtime) || 0}" data-search="${esc(e.name || "").toLowerCase()}" aria-label="Reproducir temporada ${n}, episodio ${e.episode_number}: ${esc(e.name || "")}">
+    const seriesTitle = currentDetailContext?.title || "";
+    const seriesPoster = currentDetailContext?.posterPath || "";
+    const offlineEpisodes = canUseOfflineDownloads();
+    const cardTag = offlineEpisodes ? "div" : "button";
+    const cardAttrs = offlineEpisodes ? ' role="button" tabindex="0"' : "";
+    box.innerHTML = (s.episodes || []).map(e => `<${cardTag} class="episode-card"${cardAttrs} data-act="play-episode" data-type="tv" data-id="${id}" data-season="${n}" data-episode="${e.episode_number}" data-runtime="${Number(e.runtime) || 0}" data-search="${esc(e.name || "").toLowerCase()}" aria-label="Reproducir temporada ${n}, episodio ${e.episode_number}: ${esc(e.name || "")}">
       <span class="episode-thumb">${e.still_path ? `<img loading="lazy" src="${img(e.still_path, "w300")}" alt="">` : '<span class="episode-thumb-fallback"></span>'}</span>
       <span class="episode-meta"><span class="episode-number">E${String(e.episode_number).padStart(2, "0")}</span><strong>${esc(e.name || "Episodio " + e.episode_number)}</strong></span>
-    </button>`).join("") || '<p class="episode-empty">No hay capítulos disponibles para esta temporada.</p>';
+      ${offlineEpisodes ? offlineDownloadButton({tmdbId:id, mediaType:"tv", season:n, episode:e.episode_number, title:`${seriesTitle} · T${n} E${e.episode_number} ${e.name || ""}`.trim(), posterPath:seriesPoster}) : ""}
+    </${cardTag}>`).join("") || '<p class="episode-empty">No hay capítulos disponibles para esta temporada.</p>';
   }catch(e){ if (t === routeToken && request === episodeRequestToken) box.innerHTML = '<p class="episode-empty">No se pudieron cargar los capítulos. Vuelve a elegir la temporada para reintentar.</p>'; }
 }
 function filterEpisodeCards(query){
@@ -798,7 +1203,7 @@ function showPlayerHud(key){
 window.cinenovaExitPlayerFullscreen = () => {
   const frame = $(".player-frame.player-fullscreen iframe");
   $$(".player-frame.player-fullscreen").forEach(player => player.classList.remove("player-fullscreen"));
-  $$(".app-player-overlay").forEach(player => { const loader=$(".player-loader",player); if(loader){ clearTimeout(loader._debugTimer); removePlayerLoader(loader); } $("#playerDebugInfo",player)?.remove(); player.remove(); });
+  $$(".app-player-overlay").forEach(player => { $$("video", player).forEach(video => { try{ video.pause(); }catch(e){} }); const loader=$(".player-loader",player); if(loader){ clearTimeout(loader._debugTimer); removePlayerLoader(loader); } $("#playerDebugInfo",player)?.remove(); player.remove(); });
   frame?.blur();
   window.CinenovaTvRemote?.setPlayerFullscreen(false);
   if (isTvMode) requestAnimationFrame(() => {
@@ -909,7 +1314,8 @@ function installSameOriginPlayerBridge(doc, win){
   })).observe(doc.documentElement,{childList:true,subtree:true});
 }
 function handleFullscreenPlayerKey(key, player, event){
-  if (!player || !["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter"," ","MediaPlayPause"].includes(key)) return false;
+  if (!player || player.classList.contains("offline-player-overlay")) return false;
+  if (!["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter"," ","MediaPlayPause"].includes(key)) return false;
   const frame = $("iframe", player);
   event?.preventDefault(); event?.stopImmediatePropagation();
   if (key === " "){ frame?.contentWindow?.postMessage({type:"cinenova-player-key",key:" "}, "*"); return true; }
@@ -1055,6 +1461,7 @@ function router(){
   if (a === "doramas") return listPage("doramas");
   if (a === "lista") return listPage(b);
   if (a === "buscar") return search(q);
+  if (a === "descargas") return canUseOfflineDownloads() ? downloadsView() : notFound();
   if (a === "mi-lista") return myList();
   if (LEGAL_PAGES[a]) return legalPage(a);
   if ((a === "movie" || a === "tv") && b){
@@ -1440,9 +1847,13 @@ document.addEventListener("click", e => {
   if (e.target.closest("[data-open-settings],#tvSettings")){ e.preventDefault(); openSettings(); return; }
   const arr = e.target.closest(".arr");
   if (arr){ const sc = arr.parentElement.querySelector(".scroller"); sc.scrollBy({left:(arr.classList.contains("r") ? 1 : -1) * sc.clientWidth * .85}); return; }
+  const vaultAction = e.target.closest("[data-vault]");
+  if (vaultAction){ e.preventDefault(); e.stopPropagation(); handleVaultAction(vaultAction); return; }
   const act = e.target.closest("[data-act]");
   if (act){
     const a = act.dataset.act;
+    if (a === "offline-download"){ e.preventDefault(); e.stopPropagation(); startOfflineDownload(offlineMetaFromElement(act)); return; }
+    if (a === "open-downloads"){ e.preventDefault(); e.stopPropagation(); location.hash = "#/descargas"; return; }
     if (a === "play-detail"){
       activateDetailTab(act.dataset.tab);
       const season = Number($("#playSeason")?.value || 1), episode = Number($("#playEpisode")?.value || 1);
@@ -1480,5 +1891,6 @@ window.addEventListener("hashchange", router);
   if (!localBrowser && typeof configData.apiBaseUrl === "string" && configData.apiBaseUrl.trim()) API_BASE_URL = configData.apiBaseUrl.trim().replace(/\/$/, "");
   await applyGatewayConfig(configData);
   try{ await loadGenres(); }catch(e){}
+  if (canUseOfflineDownloads()) refreshDownloads();
   router();
 })();

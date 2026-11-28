@@ -9,6 +9,7 @@ import android.content.res.Configuration;
 import android.os.PowerManager;
 import android.os.StatFs;
 import android.os.SystemClock;
+import android.util.Log;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -573,6 +574,7 @@ public class MainActivity extends BridgeActivity {
         String origin;
         String userAgent;
         String streamType;
+        String manifestText;
 
         JSONObject toJson() {
             JSONObject data = new JSONObject();
@@ -582,6 +584,7 @@ public class MainActivity extends BridgeActivity {
                 data.put("origin", origin == null ? "" : origin);
                 data.put("userAgent", userAgent == null ? "" : userAgent);
                 data.put("streamType", streamType);
+                data.put("manifestText", manifestText == null ? "" : manifestText);
             } catch (Exception ignored) {
                 // No hay valores problemáticos.
             }
@@ -595,6 +598,7 @@ public class MainActivity extends BridgeActivity {
             info.origin = data.optString("origin", "");
             info.userAgent = data.optString("userAgent", "");
             info.streamType = data.optString("streamType", "mp4");
+            info.manifestText = data.optString("manifestText", "");
             return info;
         }
     }
@@ -602,28 +606,41 @@ public class MainActivity extends BridgeActivity {
     /** WebView oculto que captura el primer stream real; nunca reenvía los spots del Gateway. */
     private final class StreamExtractor {
         private final String itemId;
+        private final String fallbackUrl;
         private volatile WebView activeProbe;
         private volatile CountDownLatch activeLatch;
+        private volatile boolean detected;
 
-        StreamExtractor(String itemId) {
+        StreamExtractor(String itemId, String fallbackUrl) {
             this.itemId = itemId == null ? "" : itemId;
+            this.fallbackUrl = fallbackUrl == null ? "" : fallbackUrl;
         }
 
-        /** Puente JS: detecta manifests y MP4 incluso si la URL no termina en .m3u8. */
+        void markDetected() {
+            detected = true;
+        }
+
+        /** Puente JS: detecta manifests Blob, MP4 y HLS incluso en iframes del mismo origen. */
         private String detectionJs() {
             return "(function(){"
-                + "if(window.__cnVaultHook)return true;window.__cnVaultHook=true;"
                 + "var ITEM=" + JSONObject.quote(itemId) + ";"
                 + "function text(v){return String(v||'').toLowerCase();}"
                 + "function isM3u8(v){return String(v||'').trim().indexOf('#EXTM3U')===0;}"
                 + "function isMediaType(v){v=text(v);return v.indexOf('mpegurl')>=0||v.indexOf('video/mp4')>=0;}"
                 + "function skip(u){u=text(u);return !u||u.indexOf('blob:')===0||u.indexOf('data:')===0||u.indexOf('test-videos.co.uk')>=0||u.indexOf('/v1/stream/segment')>=0;}"
-                + "function report(u){try{if(skip(u))return;CinenovaVault.reportDetectedStream(ITEM,String(u),location.href);}catch(e){}}"
-                + "function maybeText(u,ct,res){var lower=text(u),type=text(ct),len=0;try{len=Number(res.headers.get('content-length'))||0;}catch(e){}if(lower.indexOf('.mp4')>=0||lower.indexOf('.webm')>=0||type.indexOf('video/')>=0||type.indexOf('image/')>=0)return;if(lower.indexOf('.m3u8')>=0||lower.indexOf('playlist')>=0||lower.indexOf('master')>=0||lower.indexOf('manifest')>=0||lower.indexOf('index-')>=0||lower.indexOf('.txt')>=0||type.indexOf('text/plain')>=0||type.indexOf('octet-stream')>=0||!ct||(len>0&&len<1048576)){try{res.clone().text().then(function(body){if(isM3u8(body))report(u);}).catch(function(){});}catch(e){}}}"
-                + "var of=window.fetch;if(typeof of==='function'){window.fetch=function(){var args=arguments;var u=args[0];try{u=typeof u==='string'?u:(u&&u.url)||String(u);}catch(e){}var pending=of.apply(this,args);if(!pending||typeof pending.then!=='function')return pending;return pending.then(function(res){try{var ct=res.headers&&res.headers.get?res.headers.get('content-type'):'';if(isMediaType(ct))report(u);else maybeText(u,ct,res);}catch(e){}return res;});};}"
-                + "var OX=window.XMLHttpRequest;if(OX&&OX.prototype){var oo=OX.prototype.open,os=OX.prototype.send;OX.prototype.open=function(m,u){this.__cnUrl=u;return oo.apply(this,arguments);};OX.prototype.send=function(){var xhr=this;try{xhr.addEventListener('load',function(){try{var ct=xhr.getResponseHeader('content-type')||'';var u=xhr.responseURL||xhr.__cnUrl||'';if(isMediaType(ct)){report(u);}else{var lower=text(u),type=text(ct);if(lower.indexOf('.mp4')<0&&lower.indexOf('.webm')<0&&type.indexOf('video/')<0&&type.indexOf('image/')<0&&(lower.indexOf('.m3u8')>=0||lower.indexOf('playlist')>=0||lower.indexOf('master')>=0||lower.indexOf('manifest')>=0||lower.indexOf('index-')>=0||lower.indexOf('.txt')>=0||type.indexOf('text/plain')>=0||type.indexOf('octet-stream')>=0||!ct)){var body='';try{if(xhr.responseType===''||xhr.responseType==='text')body=xhr.responseText||'';}catch(e){}if(isM3u8(body))report(u);}}}catch(e){}});}catch(e){}return os.apply(this,arguments);};}"
-                + "function silence(){var nodes=document.querySelectorAll('video,audio');for(var i=0;i<nodes.length;i++){try{var el=nodes[i];el.muted=true;el.volume=0;el.removeAttribute('autoplay');el.style.visibility='hidden';}catch(e){}}}"
-                + "document.addEventListener('DOMContentLoaded',silence,true);setInterval(silence,1200);silence();return true;})()";
+                + "function api(win){try{return win.CinenovaVault||(win.top&&win.top.CinenovaVault)||window.CinenovaVault;}catch(e){try{return window.CinenovaVault;}catch(e2){return null;}}}"
+                + "function here(win){try{return win.location.href;}catch(e){return location.href;}}"
+                + "function reportStream(win,u){try{var a=api(win);if(a&&!skip(u))a.reportDetectedStream(ITEM,String(u),here(win));}catch(e){}}"
+                + "function reportManifest(win,t){try{var s=String(t||'');if(!isM3u8(s)||skip(here(win)))return;var a=api(win);if(a)a.reportDetectedManifest(ITEM,s,here(win));}catch(e){}}"
+                + "function maybeText(win,u,ct,res){var lower=text(u),type=text(ct),len=0;try{len=Number(res.headers.get('content-length'))||0;}catch(e){}if(lower.indexOf('.mp4')>=0||lower.indexOf('.webm')>=0||type.indexOf('video/')>=0||type.indexOf('image/')>=0)return;if(lower.indexOf('.m3u8')>=0||lower.indexOf('playlist')>=0||lower.indexOf('master')>=0||lower.indexOf('manifest')>=0||lower.indexOf('index-')>=0||lower.indexOf('.txt')>=0||type.indexOf('text/plain')>=0||type.indexOf('octet-stream')>=0||!ct||(len>0&&len<1048576)){try{res.clone().text().then(function(body){if(isM3u8(body))reportManifest(win,body);}).catch(function(){});}catch(e){}}}"
+                + "function silence(win){try{var doc=win.document;if(!doc)return;var nodes=doc.querySelectorAll('video,audio');for(var i=0;i<nodes.length;i++){try{var el=nodes[i];el.muted=true;el.volume=0;el.removeAttribute('autoplay');el.style.visibility='hidden';}catch(e){}}}catch(e){}}"
+                + "function hookWindow(win){try{if(!win)return;if(win.__cnVaultHook&&win.__cnVaultDoc===win.document)return;win.__cnVaultHook=true;win.__cnVaultDoc=win.document;"
+                + "var of=win.fetch;if(typeof of==='function'){win.fetch=function(){var args=arguments;var u=args[0];try{u=typeof u==='string'?u:(u&&u.url)||String(u);}catch(e){}var pending=of.apply(this,args);if(!pending||typeof pending.then!=='function')return pending;return pending.then(function(res){try{var ct=res.headers&&res.headers.get?res.headers.get('content-type'):'';if(isMediaType(ct))reportStream(win,u);else maybeText(win,u,ct,res);}catch(e){}return res;});};}"
+                + "var OX=win.XMLHttpRequest;if(OX&&OX.prototype){var oo=OX.prototype.open,os=OX.prototype.send;OX.prototype.open=function(m,u){this.__cnUrl=u;return oo.apply(this,arguments);};OX.prototype.send=function(){var xhr=this;try{xhr.addEventListener('load',function(){try{var ct=xhr.getResponseHeader('content-type')||'';var u=xhr.responseURL||xhr.__cnUrl||'';if(isMediaType(ct)){reportStream(win,u);}else{var lower=text(u),type=text(ct);if(lower.indexOf('.mp4')<0&&lower.indexOf('.webm')<0&&type.indexOf('video/')<0&&type.indexOf('image/')<0&&(lower.indexOf('.m3u8')>=0||lower.indexOf('playlist')>=0||lower.indexOf('master')>=0||lower.indexOf('manifest')>=0||lower.indexOf('index-')>=0||lower.indexOf('.txt')>=0||type.indexOf('text/plain')>=0||type.indexOf('octet-stream')>=0||!ct)){var body='';try{if(xhr.responseType===''||xhr.responseType==='text')body=xhr.responseText||'';}catch(e){}if(isM3u8(body))reportManifest(win,body);}}}catch(e){}});}catch(e){}return os.apply(this,arguments);};}"
+                + "var U=win.URL;if(U&&typeof U.createObjectURL==='function'){var ou=U.createObjectURL;U.createObjectURL=function(obj){try{if(obj&&typeof obj.text==='function'){obj.text().then(function(t){reportManifest(win,t);}).catch(function(){});}}catch(e){}return ou.apply(this,arguments);};}"
+                + "silence(win);}catch(e){}}"
+                + "function install(){hookWindow(window);try{var frames=document.querySelectorAll('iframe,frame');for(var i=0;i<frames.length;i++){try{hookWindow(frames[i].contentWindow);}catch(e){}}}catch(e){}}"
+                + "if(!window.__cnVaultTimer)window.__cnVaultTimer=setInterval(install,600);install();return true;})()";
         }
 
         private static final String AUTOPLAY_JS = "(function(){"
@@ -635,6 +652,7 @@ public class MainActivity extends BridgeActivity {
 
         StreamInfo extract(String embedUrl) {
             if (embedUrl == null || embedUrl.isEmpty()) return null;
+            Log.d("CinenovaVault", "Extractor iniciado para " + itemId + ": " + embedUrl);
             final WebView[] probeHolder = new WebView[1];
             final boolean[] destroyed = new boolean[1];
             final StreamInfo[] found = new StreamInfo[1];
@@ -658,6 +676,17 @@ public class MainActivity extends BridgeActivity {
                     probe.setVisibility(View.INVISIBLE);
                     ViewGroup root = findViewById(android.R.id.content);
                     root.addView(probe, new FrameLayout.LayoutParams(1, 1));
+                    probe.postDelayed(() -> {
+                        if (destroyed[0] || detected) return;
+                        if (fallbackUrl.isEmpty()) {
+                            Log.d("CinenovaVault", "Sin fallback configurado a los 14 s");
+                            return;
+                        }
+                        Log.d("CinenovaVault", "Sin stream a los 14 s; probando tukiplay: " + fallbackUrl);
+                        try { probe.loadUrl(fallbackUrl); } catch (Exception error) {
+                            Log.d("CinenovaVault", "Fallback tukiplay falló: " + error.getMessage());
+                        }
+                    }, 14000L);
                     final Runnable autoplay = () -> {
                         if (destroyed[0]) return;
                         try { probe.evaluateJavascript(AUTOPLAY_JS, null); } catch (Exception ignored) {}
@@ -681,12 +710,14 @@ public class MainActivity extends BridgeActivity {
 
                         @Override
                         public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                            Log.d("CinenovaVault", "Extractor cargando: " + url);
                             try { view.evaluateJavascript(detectionJs(), null); } catch (Exception ignored) {}
                             super.onPageStarted(view, url, favicon);
                         }
 
                         @Override
                         public void onPageFinished(WebView view, String url) {
+                            Log.d("CinenovaVault", "Extractor listo: " + url);
                             try { view.evaluateJavascript(detectionJs(), null); } catch (Exception ignored) {}
                             view.postDelayed(autoplay, 1500L);
                             view.postDelayed(autoplay, 3500L);
@@ -719,6 +750,7 @@ public class MainActivity extends BridgeActivity {
             });
             try {
                 if (!latch.await(30, TimeUnit.SECONDS)) {
+                    Log.d("CinenovaVault", "Timeout total de extracción (30 s) para " + itemId);
                     runOnUiThread(() -> destroyProbe(probeHolder[0]));
                     return null;
                 }
@@ -743,6 +775,8 @@ public class MainActivity extends BridgeActivity {
         private void capture(WebView view, Uri uri, Map<String, String> headers,
                              boolean[] destroyed, StreamInfo[] found, CountDownLatch latch) {
             if (destroyed[0]) return;
+            detected = true;
+            Log.d("CinenovaVault", "Stream HTTP detectado: " + uri);
             StreamInfo info = new StreamInfo();
             info.url = uri.toString();
             info.referer = header(headers, "Referer");
@@ -1209,7 +1243,36 @@ public class MainActivity extends BridgeActivity {
             info.userAgent = VAULT_USER_AGENT;
             info.streamType = lower.contains(".mp4") && !lower.contains(".m3u8") && !lower.contains("mpegurl")
                 ? "mp4" : "m3u8";
+            Log.d("CinenovaVault", "Stream reportado por JS (" + info.streamType + "): " + url);
             StreamExtractor extractor = activeExtractor;
+            if (extractor != null) extractor.markDetected();
+            beginDetectedDownload(record, info);
+            if (extractor != null) extractor.destroyActiveProbe();
+        }
+
+        /** Recibe un manifiesto HLS creado como Blob y lo descarga sin depender de una URL .m3u8. */
+        @JavascriptInterface
+        public void reportDetectedManifest(String itemId, String manifestContent, String pageUrl) {
+            if (itemId == null || itemId.isEmpty() || manifestContent == null) return;
+            String manifest = manifestContent.replace("\uFEFF", "").trim();
+            if (manifest.indexOf("#EXTM3U") < 0) return;
+            String lower = manifest.toLowerCase(Locale.ROOT);
+            if (lower.contains("test-videos.co.uk") || lower.contains("/v1/stream/segment")) return;
+            String page = pageUrl == null ? "" : pageUrl.trim();
+            String lowerPage = page.toLowerCase(Locale.ROOT);
+            if (!lowerPage.startsWith("http://") && !lowerPage.startsWith("https://")) return;
+            DownloadRecord record = findRecord(itemId);
+            if (record == null) return;
+            Log.d("CinenovaVault", "Manifiesto Blob detectado (" + manifestContent.length() + " bytes)");
+            StreamInfo info = new StreamInfo();
+            info.url = page;
+            info.referer = page;
+            info.origin = originOf(page);
+            info.userAgent = VAULT_USER_AGENT;
+            info.streamType = "m3u8";
+            info.manifestText = manifest;
+            StreamExtractor extractor = activeExtractor;
+            if (extractor != null) extractor.markDetected();
             beginDetectedDownload(record, info);
             if (extractor != null) extractor.destroyActiveProbe();
         }
@@ -1293,10 +1356,23 @@ public class MainActivity extends BridgeActivity {
                     items().put(record.toJson());
                     saveIndex();
                 }
-                emitProgress(record, "downloading");
+                emitProgress(record, "downloading", "extracting");
                 final DownloadRecord pending = record;
+                String fallbackUrl = "";
+                try {
+                    Uri embed = Uri.parse(embedUrl);
+                    String scheme = embed.getScheme();
+                    String authority = embed.getAuthority();
+                    if (scheme != null && authority != null) {
+                        String fallbackPath = "tv".equals(mediaType)
+                            ? "/p/tukiplay/embed/tv/" + tmdbId + "/" + season + "/" + episode
+                            : "/p/tukiplay/embed/movie/" + tmdbId;
+                        fallbackUrl = scheme + "://" + authority + fallbackPath;
+                    }
+                } catch (Exception ignored) {}
+                final String fallback = fallbackUrl;
                 executor.execute(() -> {
-                    StreamExtractor extractor = new StreamExtractor(itemId);
+                    StreamExtractor extractor = new StreamExtractor(itemId, fallback);
                     activeExtractor = extractor;
                     StreamInfo info;
                     try {
@@ -1440,8 +1516,12 @@ public class MainActivity extends BridgeActivity {
         }
 
         private void emitProgress(DownloadRecord record, String status) {
+            emitProgress(record, status, status);
+        }
+
+        private void emitProgress(DownloadRecord record, String status, String stage) {
             long now = System.currentTimeMillis();
-            if ("downloading".equals(status) && now - lastProgressEmit < 500) return;
+            if ("downloading".equals(status) && "downloading".equals(stage) && now - lastProgressEmit < 500) return;
             lastProgressEmit = now;
             JSONObject detail = new JSONObject();
             try {
@@ -1452,6 +1532,7 @@ public class MainActivity extends BridgeActivity {
                 detail.put("episode", record.episode);
                 detail.put("title", record.title);
                 detail.put("status", status);
+                detail.put("stage", stage == null || stage.isEmpty() ? status : stage);
                 detail.put("progress", Math.max(0, Math.min(100, record.progress)));
                 detail.put("bytesDownloaded", record.bytesDownloaded);
                 detail.put("totalBytes", record.totalBytes);
@@ -1533,6 +1614,8 @@ public class MainActivity extends BridgeActivity {
             try {
                 File directory = new File(owner.vaultDir, record.itemId);
                 if (!directory.exists()) directory.mkdirs();
+                Log.d("CinenovaVault", "Iniciando descarga " + info.streamType + " para " + record.itemId);
+                owner.emitProgress(record, "downloading", "downloading");
                 if ("m3u8".equals(info.streamType)) {
                     downloadHls(directory);
                 } else {
@@ -1550,10 +1633,13 @@ public class MainActivity extends BridgeActivity {
                 owner.emitProgress(record, "ready");
             } catch (Exception error) {
                 if (!cancelled) {
+                    String reason = error.getMessage();
+                    if (reason == null || reason.isEmpty()) reason = "Error de descarga";
+                    Log.d("CinenovaVault", "Descarga fallida " + record.itemId + ": " + reason);
                     record.status = "error";
-                    record.errorReason = String.valueOf(error.getMessage());
+                    record.errorReason = reason;
                     owner.syncRecord(record);
-                    owner.emitProgress(record, "error");
+                    owner.emitProgress(record, "error", "error");
                 }
             } finally {
                 closeInput();
@@ -1622,7 +1708,7 @@ public class MainActivity extends BridgeActivity {
                     long now = System.currentTimeMillis();
                     if (now - last >= 500) {
                         owner.syncRecord(record);
-                        owner.emitProgress(record, "downloading");
+                        owner.emitProgress(record, "downloading", "downloading");
                         last = now;
                     }
                 }
@@ -1636,8 +1722,11 @@ public class MainActivity extends BridgeActivity {
         }
 
         private void downloadHls(File directory) throws IOException {
-            String playlist = fetchText(info.url);
+            boolean embedded = info.manifestText != null && !info.manifestText.isEmpty();
+            String playlist = embedded ? info.manifestText : fetchText(info.url);
             String baseUrl = info.url;
+            Log.d("CinenovaVault", "Descargando HLS (" + (embedded ? "manifiesto Blob" : "playlist HTTP") + "): " + info.url);
+            owner.emitProgress(record, "downloading", "downloading");
             if (playlist.contains("#EXT-X-STREAM-INF")) {
                 String[] lines = playlist.split("\\r?\\n");
                 String variant = null;
@@ -1669,6 +1758,11 @@ public class MainActivity extends BridgeActivity {
             }
             List<String> localLines = new ArrayList<>();
             int index = 0;
+            int totalSegments = 0;
+            for (String raw : lines) {
+                String line = raw.trim();
+                if (!line.isEmpty() && !line.startsWith("#")) totalSegments += 1;
+            }
             long last = System.currentTimeMillis();
             for (String raw : lines) {
                 if (cancelled) return;
@@ -1680,12 +1774,13 @@ public class MainActivity extends BridgeActivity {
                     String name = String.format(Locale.ROOT, "seg_%05d.ts", index++);
                     owner.cipher.writeEncrypted(new File(directory, name + ".cnv"), segment);
                     record.bytesDownloaded += segment.length;
-                    record.progress = record.totalBytes > 0
-                        ? (int) Math.min(100, record.bytesDownloaded * 100 / record.totalBytes) : record.progress;
+                    record.totalBytes = Math.max(record.totalBytes, record.bytesDownloaded);
+                    record.progress = totalSegments > 0
+                        ? (int) Math.min(99, index * 100L / totalSegments) : record.progress;
                     long now = System.currentTimeMillis();
                     if (now - last >= 500) {
                         owner.syncRecord(record);
-                        owner.emitProgress(record, "downloading");
+                        owner.emitProgress(record, "downloading", "downloading");
                         last = now;
                     }
                     localLines.add(name);
@@ -1693,6 +1788,7 @@ public class MainActivity extends BridgeActivity {
                     localLines.add(line);
                 }
             }
+            if (index == 0) throw new IOException("Playlist HLS sin segmentos");
             StringBuilder localPlaylist = new StringBuilder();
             for (String line : localLines) localPlaylist.append(line).append('\n');
             owner.cipher.writeEncrypted(new File(directory, "index.m3u8.cnv"),

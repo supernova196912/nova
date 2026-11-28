@@ -491,6 +491,7 @@ function downloadCardHTML(item){
     : `<div class="noimg">${esc(title)}</div>`;
   const subtitle = item.mediaType === "tv" ? `T${Number(item.season) || 1} · E${Number(item.episode) || 1}` : "Película";
   const progress = Math.max(0, Math.min(100, Number(item.progress) || 0));
+  const extracting = status === "downloading" && !Number(item.bytesDownloaded) && !progress;
   const reasonText = esc(downloadErrorText(item.errorReason));
   const reasonHTML = item.errorReason ? `<span class="download-error">${reasonText}</span>` : "";
   let stateHTML = "", controlsHTML = "";
@@ -514,7 +515,7 @@ function downloadCardHTML(item){
   return `<article class="download-card" data-download-item="${esc(item.itemId)}" data-status="${status}">
     <div class="download-poster">${poster}</div>
     <div class="download-info"><h3>${esc(title)}</h3><p class="muted">${esc(subtitle)} · ${fmtDownloadBytes(item.totalBytes)}</p>
-      <div class="download-state-line" data-dl-state>${active ? (status === "paused" ? "Pausada" : "Descargando") : ""}</div>
+      <div class="download-state-line" data-dl-state>${active ? (status === "paused" ? "Pausada" : extracting ? "Buscando enlace de video..." : "Descargando") : ""}</div>
       ${stateHTML}<div class="download-controls">${controlsHTML}</div>
     </div>
   </article>`;
@@ -557,7 +558,9 @@ function updateDownloadView(info){
   const label = $("[data-dl-progress]", row); if (label) label.textContent = `${progress}%`;
   const bytes = $("[data-dl-bytes]", row); if (bytes) bytes.textContent = `${fmtDownloadBytes(info.bytesDownloaded)} / ${fmtDownloadBytes(info.totalBytes)}`;
   const time = $("[data-dl-time]", row); if (time) time.textContent = remainingText(info.expiresAt);
-  const state = $("[data-dl-state]", row); if (state) state.textContent = info.status === "paused" ? "Pausada" : info.status === "downloading" ? "Descargando" : "";
+  const stage = info.stage || (info.status === "downloading" && !Number(info.bytesDownloaded) && !progress ? "extracting" : "downloading");
+  const state = $("[data-dl-state]", row);
+  if (state) state.textContent = info.status === "paused" ? "Pausada" : info.status === "downloading" ? (stage === "extracting" ? "Buscando enlace de video..." : "Descargando") : "";
 }
 function handleVaultAction(button){
   if (!canUseOfflineDownloads()) return;

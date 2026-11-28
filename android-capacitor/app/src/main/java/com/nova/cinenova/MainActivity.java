@@ -60,6 +60,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -610,6 +611,7 @@ public class MainActivity extends BridgeActivity {
         private volatile WebView activeProbe;
         private volatile CountDownLatch activeLatch;
         private volatile boolean detected;
+        private final AtomicBoolean captured = new AtomicBoolean(false);
 
         StreamExtractor(String itemId, String fallbackUrl) {
             this.itemId = itemId == null ? "" : itemId;
@@ -618,6 +620,7 @@ public class MainActivity extends BridgeActivity {
 
         void markDetected() {
             detected = true;
+            captured.set(true);
         }
 
         /** Puente JS: detecta manifests Blob, MP4 y HLS incluso en iframes del mismo origen. */
@@ -631,16 +634,16 @@ public class MainActivity extends BridgeActivity {
                 + "function api(win){try{return win.CinenovaVault||(win.top&&win.top.CinenovaVault)||window.CinenovaVault;}catch(e){try{return window.CinenovaVault;}catch(e2){return null;}}}"
                 + "function here(win){try{return win.location.href;}catch(e){return location.href;}}"
                 + "function reportStream(win,u){try{var a=api(win);if(a&&!skip(u))a.reportDetectedStream(ITEM,String(u),here(win));}catch(e){}}"
-                + "function reportManifest(win,t){try{var s=String(t||'');if(!isM3u8(s)||skip(here(win)))return;var a=api(win);if(a)a.reportDetectedManifest(ITEM,s,here(win));}catch(e){}}"
-                + "function maybeText(win,u,ct,res){var lower=text(u),type=text(ct),len=0;try{len=Number(res.headers.get('content-length'))||0;}catch(e){}if(lower.indexOf('.mp4')>=0||lower.indexOf('.webm')>=0||type.indexOf('video/')>=0||type.indexOf('image/')>=0)return;if(lower.indexOf('.m3u8')>=0||lower.indexOf('playlist')>=0||lower.indexOf('master')>=0||lower.indexOf('manifest')>=0||lower.indexOf('index-')>=0||lower.indexOf('.txt')>=0||type.indexOf('text/plain')>=0||type.indexOf('octet-stream')>=0||!ct||(len>0&&len<1048576)){try{res.clone().text().then(function(body){if(isM3u8(body))reportManifest(win,body);}).catch(function(){});}catch(e){}}}"
-                + "function silence(win){try{var doc=win.document;if(!doc)return;var nodes=doc.querySelectorAll('video,audio');for(var i=0;i<nodes.length;i++){try{var el=nodes[i];el.muted=true;el.volume=0;el.removeAttribute('autoplay');el.style.visibility='hidden';}catch(e){}}}catch(e){}}"
-                + "function hookWindow(win){try{if(!win)return;if(win.__cnVaultHook&&win.__cnVaultDoc===win.document)return;win.__cnVaultHook=true;win.__cnVaultDoc=win.document;"
+                + "function reportManifest(win,t,u){try{var s=String(t||'');var b=String(u||here(win));if(!isM3u8(s)||skip(b))return;var a=api(win);if(a)a.reportDetectedManifest(ITEM,s,b,String((win.navigator&&win.navigator.userAgent)||navigator.userAgent||''));}catch(e){}}"
+                + "function maybeText(win,u,ct,res){var lower=text(u),type=text(ct),len=0;try{len=Number(res.headers.get('content-length'))||0;}catch(e){}if(lower.indexOf('.mp4')>=0||lower.indexOf('.webm')>=0||type.indexOf('video/')>=0||type.indexOf('image/')>=0)return;if(lower.indexOf('.m3u8')>=0||lower.indexOf('playlist')>=0||lower.indexOf('master')>=0||lower.indexOf('manifest')>=0||lower.indexOf('index-')>=0||lower.indexOf('.txt')>=0||type.indexOf('text/plain')>=0||type.indexOf('octet-stream')>=0||!ct||(len>0&&len<1048576)){try{res.clone().text().then(function(body){if(isM3u8(body))reportManifest(win,body,u);}).catch(function(){});}catch(e){}}}"
+                + "function silence(win){try{var doc=win.document;if(!doc)return;var proto=win.HTMLMediaElement&&win.HTMLMediaElement.prototype;if(proto&&!proto.__cnVaultMutedPlay){var originalPlay=proto.play;proto.play=function(){try{this.muted=true;this.volume=0;}catch(e){}return originalPlay.apply(this,arguments);};proto.__cnVaultMutedPlay=true;}var nodes=doc.querySelectorAll('video,audio');for(var i=0;i<nodes.length;i++){try{var el=nodes[i];el.muted=true;el.volume=0;el.removeAttribute('autoplay');el.style.visibility='hidden';}catch(e){}}}catch(e){}}"
+                + "function hookWindow(win){try{if(!win)return;if(win.__cnVaultHook&&win.__cnVaultDoc===win.document){silence(win);return;}win.__cnVaultHook=true;win.__cnVaultDoc=win.document;"
                 + "var of=win.fetch;if(typeof of==='function'){win.fetch=function(){var args=arguments;var u=args[0];try{u=typeof u==='string'?u:(u&&u.url)||String(u);}catch(e){}var pending=of.apply(this,args);if(!pending||typeof pending.then!=='function')return pending;return pending.then(function(res){try{var ct=res.headers&&res.headers.get?res.headers.get('content-type'):'';if(isMediaType(ct))reportStream(win,u);else maybeText(win,u,ct,res);}catch(e){}return res;});};}"
-                + "var OX=win.XMLHttpRequest;if(OX&&OX.prototype){var oo=OX.prototype.open,os=OX.prototype.send;OX.prototype.open=function(m,u){this.__cnUrl=u;return oo.apply(this,arguments);};OX.prototype.send=function(){var xhr=this;try{xhr.addEventListener('load',function(){try{var ct=xhr.getResponseHeader('content-type')||'';var u=xhr.responseURL||xhr.__cnUrl||'';if(isMediaType(ct)){reportStream(win,u);}else{var lower=text(u),type=text(ct);if(lower.indexOf('.mp4')<0&&lower.indexOf('.webm')<0&&type.indexOf('video/')<0&&type.indexOf('image/')<0&&(lower.indexOf('.m3u8')>=0||lower.indexOf('playlist')>=0||lower.indexOf('master')>=0||lower.indexOf('manifest')>=0||lower.indexOf('index-')>=0||lower.indexOf('.txt')>=0||type.indexOf('text/plain')>=0||type.indexOf('octet-stream')>=0||!ct)){var body='';try{if(xhr.responseType===''||xhr.responseType==='text')body=xhr.responseText||'';}catch(e){}if(isM3u8(body))reportManifest(win,body);}}}catch(e){}});}catch(e){}return os.apply(this,arguments);};}"
-                + "var U=win.URL;if(U&&typeof U.createObjectURL==='function'){var ou=U.createObjectURL;U.createObjectURL=function(obj){try{if(obj&&typeof obj.text==='function'){obj.text().then(function(t){reportManifest(win,t);}).catch(function(){});}}catch(e){}return ou.apply(this,arguments);};}"
+                + "var OX=win.XMLHttpRequest;if(OX&&OX.prototype){var oo=OX.prototype.open,os=OX.prototype.send;OX.prototype.open=function(m,u){this.__cnUrl=u;return oo.apply(this,arguments);};OX.prototype.send=function(){var xhr=this;try{xhr.addEventListener('load',function(){try{var ct=xhr.getResponseHeader('content-type')||'';var u=xhr.responseURL||xhr.__cnUrl||'';if(isMediaType(ct)){reportStream(win,u);}else{var lower=text(u),type=text(ct);if(lower.indexOf('.mp4')<0&&lower.indexOf('.webm')<0&&type.indexOf('video/')<0&&type.indexOf('image/')<0&&(lower.indexOf('.m3u8')>=0||lower.indexOf('playlist')>=0||lower.indexOf('master')>=0||lower.indexOf('manifest')>=0||lower.indexOf('index-')>=0||lower.indexOf('.txt')>=0||type.indexOf('text/plain')>=0||type.indexOf('octet-stream')>=0||!ct)){var body='';try{if(xhr.responseType===''||xhr.responseType==='text')body=xhr.responseText||'';}catch(e){}if(isM3u8(body))reportManifest(win,body,u);}}}catch(e){}});}catch(e){}return os.apply(this,arguments);};}"
+                + "var U=win.URL;if(U&&typeof U.createObjectURL==='function'){var ou=U.createObjectURL;U.createObjectURL=function(obj){try{if(obj&&typeof obj.text==='function'){obj.text().then(function(t){reportManifest(win,t,here(win));}).catch(function(){});}}catch(e){}return ou.apply(this,arguments);};}"
                 + "silence(win);}catch(e){}}"
-                + "function install(){hookWindow(window);try{var frames=document.querySelectorAll('iframe,frame');for(var i=0;i<frames.length;i++){try{hookWindow(frames[i].contentWindow);}catch(e){}}}catch(e){}}"
-                + "if(!window.__cnVaultTimer)window.__cnVaultTimer=setInterval(install,600);install();return true;})()";
+                + "function installAt(win){try{hookWindow(win);var doc=win.document;var frames=doc.querySelectorAll('iframe,frame');for(var i=0;i<frames.length;i++){try{installAt(frames[i].contentWindow);}catch(e){}}}catch(e){}}"
+                + "if(!window.__cnVaultTimer)window.__cnVaultTimer=setInterval(function(){installAt(window);},400);installAt(window);return true;})()";
         }
 
         private static final String AUTOPLAY_JS = "(function(){"
@@ -679,14 +682,14 @@ public class MainActivity extends BridgeActivity {
                     probe.postDelayed(() -> {
                         if (destroyed[0] || detected) return;
                         if (fallbackUrl.isEmpty()) {
-                            Log.d("CinenovaVault", "Sin fallback configurado a los 14 s");
+                            Log.d("CinenovaVault", "Sin fallback configurado a los 15 s");
                             return;
                         }
-                        Log.d("CinenovaVault", "Sin stream a los 14 s; probando tukiplay: " + fallbackUrl);
+                        Log.d("CinenovaVault", "Sin stream a los 15 s; probando tukiplay: " + fallbackUrl);
                         try { probe.loadUrl(fallbackUrl); } catch (Exception error) {
                             Log.d("CinenovaVault", "Fallback tukiplay falló: " + error.getMessage());
                         }
-                    }, 14000L);
+                    }, 15000L);
                     final Runnable autoplay = () -> {
                         if (destroyed[0]) return;
                         try { probe.evaluateJavascript(AUTOPLAY_JS, null); } catch (Exception ignored) {}
@@ -774,7 +777,7 @@ public class MainActivity extends BridgeActivity {
 
         private void capture(WebView view, Uri uri, Map<String, String> headers,
                              boolean[] destroyed, StreamInfo[] found, CountDownLatch latch) {
-            if (destroyed[0]) return;
+            if (destroyed[0] || !captured.compareAndSet(false, true)) return;
             detected = true;
             Log.d("CinenovaVault", "Stream HTTP detectado: " + uri);
             StreamInfo info = new StreamInfo();
@@ -798,6 +801,7 @@ public class MainActivity extends BridgeActivity {
                 && !url.endsWith(".js") && !url.endsWith(".css") && !url.endsWith(".html")
                 && !url.endsWith(".png") && !url.endsWith(".jpg");
             boolean media = url.contains(".m3u8") || url.contains(".mp4")
+                || url.contains("/manifest") || url.contains("/playlist") || url.contains("/hls/")
                 || url.contains("master.txt") || indexManifest;
             if (!media) {
                 String accept = header(headers, "Accept").toLowerCase(Locale.ROOT);
@@ -829,6 +833,7 @@ public class MainActivity extends BridgeActivity {
             if (probe == null) return;
             if (activeProbe == probe) activeProbe = null;
             try { probe.stopLoading(); } catch (Exception ignored) {}
+            try { probe.loadUrl("about:blank"); } catch (Exception ignored) {}
             try {
                 ViewParent parent = probe.getParent();
                 if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(probe);
@@ -1250,15 +1255,15 @@ public class MainActivity extends BridgeActivity {
             if (extractor != null) extractor.destroyActiveProbe();
         }
 
-        /** Recibe un manifiesto HLS creado como Blob y lo descarga sin depender de una URL .m3u8. */
+        /** Recibe un manifiesto HLS creado en memoria y lo descarga sin depender de una URL .m3u8. */
         @JavascriptInterface
-        public void reportDetectedManifest(String itemId, String manifestContent, String pageUrl) {
+        public void reportDetectedManifest(String itemId, String manifestContent, String baseUrl, String userAgent) {
             if (itemId == null || itemId.isEmpty() || manifestContent == null) return;
             String manifest = manifestContent.replace("\uFEFF", "").trim();
             if (manifest.indexOf("#EXTM3U") < 0) return;
             String lower = manifest.toLowerCase(Locale.ROOT);
-            if (lower.contains("test-videos.co.uk") || lower.contains("/v1/stream/segment")) return;
-            String page = pageUrl == null ? "" : pageUrl.trim();
+            if (lower.contains("test-videos.co.uk") || lower.contains("/v1/stream/segment") || lower.contains("doubleclick")) return;
+            String page = baseUrl == null ? "" : baseUrl.trim();
             String lowerPage = page.toLowerCase(Locale.ROOT);
             if (!lowerPage.startsWith("http://") && !lowerPage.startsWith("https://")) return;
             DownloadRecord record = findRecord(itemId);
@@ -1268,7 +1273,8 @@ public class MainActivity extends BridgeActivity {
             info.url = page;
             info.referer = page;
             info.origin = originOf(page);
-            info.userAgent = VAULT_USER_AGENT;
+            String agent = userAgent == null ? "" : userAgent.trim();
+            info.userAgent = agent.isEmpty() ? VAULT_USER_AGENT : agent;
             info.streamType = "m3u8";
             info.manifestText = manifest;
             StreamExtractor extractor = activeExtractor;

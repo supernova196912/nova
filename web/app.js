@@ -1137,8 +1137,13 @@ function makePlayerContext(type,season,episode,metadata={}){
 function sendPlayerContext(frame){ if(currentPlayerContext) frame?.contentWindow?.postMessage({type:"cinenova-player-context",...currentPlayerContext},"*"); }
 function playerDisplayTitle(context, season, episode){
   const title = String(context?.title || "CINENOVA").trim() || "CINENOVA";
-  if (context?.type === "tv") return `${title} · ${Number(season) || 1}x${Number(episode) || 1}`;
-  return title;
+  if (context?.type !== "tv") return title;
+  const seasonNumber = Number(season) || 1, episodeNumber = Number(episode) || 1;
+  const base = `${title} · ${seasonNumber}x${episodeNumber}`;
+  const subtitle = String(context?.subtitle || "").trim();
+  const prefix = `${seasonNumber}x${episodeNumber} · `;
+  const episodeTitle = subtitle.startsWith(prefix) ? subtitle.slice(prefix.length).trim() : "";
+  return episodeTitle ? `${base} — ${episodeTitle}` : base;
 }
 function startDetailPlayback(id, type, season = 1, episode = 1, metadata = {}){
   const numericId = String(id).match(/^\d+/)?.[0] || "";
@@ -1154,12 +1159,12 @@ function startDetailPlayback(id, type, season = 1, episode = 1, metadata = {}){
   const gatewaySrc = gatewayEmbedSrc(type, id, season, episode);
   const playerURL = new URL(gatewaySrc || unlimplayUrl(path), location.href);
   if (!gatewaySrc && (isTvMode || isNativeApp())) playerURL.searchParams.set("cn_tv", "1");
-  const gatewayNative = Boolean(gatewaySrc) && isNativeApp();
-  if (gatewayNative){
+  const gatewayOverlay = Boolean(gatewaySrc) && (isNativeApp() || isTvMode);
+  if (gatewayOverlay){
     playerURL.searchParams.set("title", displayTitle);
     playerURL.searchParams.set(isTvMode ? "cn_tv" : "cn_app", "1");
   }
-  document.body.classList.toggle("gateway-player-active", gatewayNative);
+  document.body.classList.toggle("gateway-player-active", gatewayOverlay);
   const src = playerURL.href;
   if (overlayPlayback){
     $(".app-player-overlay")?.remove();

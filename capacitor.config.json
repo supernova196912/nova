@@ -11,7 +11,9 @@
     "allowNavigation": [
       "nova-2yi.pages.dev",
       "unlimplay.com",
-      "*.unlimplay.com"
+      "*.unlimplay.com",
+      "vg-core.novapelis.workers.dev",
+      "*.workers.dev"
     ]
   }
 }

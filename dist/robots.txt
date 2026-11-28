@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /unlimplay/
+Sitemap: https://nova-2yi.pages.dev/sitemap.xml

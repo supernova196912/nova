@@ -48,6 +48,7 @@ public class MainActivity extends BridgeActivity {
     private int playerPreviousRequestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
     private boolean playerFullscreenActive;
     private String configuredApiHost = "";
+    private String configuredGatewayHost = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -137,6 +138,7 @@ public class MainActivity extends BridgeActivity {
         return "capacitor".equals(scheme)
             || "localhost".equals(host)
             || isUnlimPlay(host)
+            || isVideoGatewayHost(host)
             || (!configuredApiHost.isEmpty() && configuredApiHost.equals(host))
             || isMediaResource(uri);
     }
@@ -147,12 +149,24 @@ public class MainActivity extends BridgeActivity {
             byte[] buffer = new byte[1024];
             int count;
             while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
-            String apiBaseUrl = new JSONObject(output.toString("UTF-8")).optString("apiBaseUrl", "");
-            String host = Uri.parse(apiBaseUrl).getHost();
-            configuredApiHost = host == null ? "" : host.toLowerCase(Locale.ROOT);
+            JSONObject config = new JSONObject(output.toString("UTF-8"));
+            configuredApiHost = hostOf(config.optString("apiBaseUrl", ""));
+            configuredGatewayHost = hostOf(config.optString("videoGatewayUrl", ""));
         } catch (Exception ignored) {
             configuredApiHost = "";
+            configuredGatewayHost = "";
         }
+        if (configuredGatewayHost.isEmpty()) configuredGatewayHost = "vg-core.novapelis.workers.dev";
+    }
+
+    private String hostOf(String value) {
+        String host = Uri.parse(value).getHost();
+        return host == null ? "" : host.toLowerCase(Locale.ROOT);
+    }
+
+    private boolean isVideoGatewayHost(String host) {
+        return "vg-core.novapelis.workers.dev".equals(host)
+            || (!configuredGatewayHost.isEmpty() && configuredGatewayHost.equals(host));
     }
 
     private boolean isUnlimPlay(String host) {

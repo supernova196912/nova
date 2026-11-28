@@ -405,6 +405,8 @@ body.tv-mode .detail-tab:focus-visible { outline:3px solid #74a0ff; outline-offs
 
 /* Controles de TV: CC abajo, sin botón de volumen (se maneja con el control remoto). */
 .player-hud .player-exit { display:none !important; }
+.player-hud .player-exit-btn { position:absolute; top:18px; left:24px; pointer-events:auto; }
+body.tv-mode .player-hud .player-exit-btn { top:18px; left:24px; min-height:38px; font-size:12px; }
 body.tv-mode .player-hud { inset:0; display:block; gap:0; transform:none; pointer-events:none; }
 body.tv-mode .player-hud.visible,body.tv-mode .player-hud:focus-within { opacity:1; transform:none; }
 body.tv-mode .player-hud .player-now-playing { top:14px; left:50%; max-width:min(72vw,680px); transform:translateX(-50%); font-size:12px; }

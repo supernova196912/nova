@@ -11,6 +11,10 @@ const store = {
   set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
 };
 let API_BASE_URL = location.origin;
+const VIDEO_GATEWAY_DEFAULT = "https://vg-core.novapelis.workers.dev";
+const GATEWAY_URL_KEY = "cinenova_video_gateway_url";
+const REMOTE_GATEWAY_CONFIG_KEY = "cinenova_remote_config_url";
+let VIDEO_GATEWAY_URL = VIDEO_GATEWAY_DEFAULT;
 let REGION = CONFIG.REGION;
 const GENRES = { movie:{}, tv:{} };
 const ITEMS = new Map();          // datos mínimos para "Mi lista"
@@ -110,6 +114,38 @@ function api(path, params = {}){
   return p;
 }
 function unlimplayUrl(path){ return API_BASE_URL.replace(/\/$/, "") + "/unlimplay/" + path; }
+function normalizeGatewayUrl(value){
+  const text = String(value ?? "").trim().replace(/^["']|["']$/g, "").replace(/\/+$/, "");
+  return /^https?:\/\/\S+$/i.test(text) ? text : "";
+}
+function gatewayUrlOverride(){
+  try { return normalizeGatewayUrl(localStorage.getItem(GATEWAY_URL_KEY)); } catch(e) { return ""; }
+}
+function gatewayEmbedSrc(type, id, season, episode){
+  const base = VIDEO_GATEWAY_URL.replace(/\/+$/, "");
+  if (!base) return "";
+  const path = type === "tv" ? `/embed/tv/${id}/${season}/${episode}` : `/embed/movie/${id}`;
+  const u = new URL(base + path, location.href);
+  if (isTvMode) u.searchParams.set("cn_tv", "1");
+  return u.href;
+}
+async function applyGatewayConfig(data = {}){
+  VIDEO_GATEWAY_URL = normalizeGatewayUrl(data.videoGatewayUrl ?? VIDEO_GATEWAY_DEFAULT);
+  const override = gatewayUrlOverride(); if (override) VIDEO_GATEWAY_URL = override;
+  let remoteUrl = normalizeGatewayUrl(data.remoteConfigUrl || data.videoGatewayConfigUrl);
+  if (!remoteUrl){ try { remoteUrl = normalizeGatewayUrl(localStorage.getItem(REMOTE_GATEWAY_CONFIG_KEY)); } catch(e) {} }
+  if (remoteUrl){
+    try{
+      const r = await fetch(remoteUrl, {headers:{accept:"application/json"}});
+      if (r.ok){
+        const remote = await r.json();
+        const fromRemote = normalizeGatewayUrl(remote.videoGatewayUrl ?? remote.video_gateway_url ?? remote.gatewayUrl);
+        if (fromRemote) VIDEO_GATEWAY_URL = fromRemote;
+      }
+    }catch(e){}
+  }
+  const finalOverride = gatewayUrlOverride(); if (finalOverride) VIDEO_GATEWAY_URL = finalOverride;
+}
 async function loadGenres(){
   const [m, t] = await Promise.all([api("/genre/movie/list"), api("/genre/tv/list")]);
   m.genres.forEach(g => GENRES.movie[g.id] = g.name);
@@ -651,8 +687,9 @@ function startDetailPlayback(id, type, season = 1, episode = 1, metadata = {}){
   $(".player-next-ep-btn")?.setAttribute("hidden","");
   const overlayPlayback = isNativeApp() || isTvMode;
   const path = type === "tv" ? `f/embed/tv/${id}/${season}/${episode}` : `f/embed/movie/${id}`;
-  const playerURL = new URL(unlimplayUrl(path), location.href);
-  if (isTvMode || isNativeApp()) playerURL.searchParams.set("cn_tv", "1");
+  const gatewaySrc = gatewayEmbedSrc(type, id, season, episode);
+  const playerURL = new URL(gatewaySrc || unlimplayUrl(path), location.href);
+  if (!gatewaySrc && (isTvMode || isNativeApp())) playerURL.searchParams.set("cn_tv", "1");
   const src = playerURL.href;
   if (overlayPlayback){
     $(".app-player-overlay")?.remove();
@@ -710,7 +747,13 @@ function createPlayerHud(player, frame){
     frame.contentWindow?.postMessage({type:"cinenova-toggle-subtitles",enabled:subtitlesEnabled,language:"es"}, "*");
     showPlayerHud();
   });
-  hud.append(cc); player.append(hud);
+  const exit = document.createElement("button"); exit.type="button"; exit.className="player-exit-btn"; exit.textContent="← Salir"; exit.tabIndex=0;
+  exit.setAttribute("aria-label","Salir del reproductor");
+  exit.addEventListener("click", () => {
+    try { frame?.contentWindow?.postMessage({type:"cinenova-player-exit-focus"}, "*"); } catch(e){}
+    exitPlayerFullscreen();
+  });
+  hud.append(cc, exit); player.append(hud);
 }
 function showPlayerDebugInfo(player, src){
   if (!player?.isConnected) return;
@@ -767,6 +810,11 @@ window.cinenovaExitPlayerFullscreen = () => {
 window.addEventListener("message", event => {
   const type = event.data?.type;
   if (type === "cinenova-exit-player") exitPlayerFullscreen();
+  else if (type === "cinenova-player-exit-focus") {
+    const frame = $(".player-frame.player-fullscreen iframe, .app-player-overlay iframe");
+    try { frame?.focus?.({preventScroll:true}); frame?.contentWindow?.postMessage({type:"cinenova-player-focus"}, "*"); } catch(e){}
+    showPlayerHud();
+  }
   else if (type === "cinenova-player-time") updateNextEpisodeButton(event.data?.currentTime, event.data?.duration);
   else if (type === "cinenova-player-subtitle-focus") { showPlayerHud(); $(".player-frame.player-fullscreen .player-cc-btn")?.focus({preventScroll:true}); }
   else if (type === "cinenova-player-activity") showPlayerHud();
@@ -896,22 +944,10 @@ window.cinenovaForwardPlayerKey = key => {
   if (player && handlePlayerHudKey(key, player)) return true;
   if (player && handleFullscreenPlayerKey(key, player)) return true;
   const frame = $(".app-player-overlay iframe, .player-frame.player-fullscreen iframe");
-  try{
-    const win = frame?.contentWindow; if (!win) return false;
-    if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(key)){
-      win.postMessage({type:"cinenova-player-key", key}, "*"); return true;
-    }
-    let doc; try { doc = frame.contentDocument; } catch(e) { doc = null; }
-    if (!doc){ win.postMessage({type:"cinenova-player-key", key}, "*"); return true; }
-    const target = doc.activeElement || doc.body;
-    const legacyCode = ({ArrowLeft:37,ArrowUp:38,ArrowRight:39,ArrowDown:40,Enter:13," ":32})[key];
-    const keyEvent = new win.KeyboardEvent("keydown", {key, code:key === " " ? "Space" : key, bubbles:true, cancelable:true});
-    try { Object.defineProperty(keyEvent, "keyCode", {get:() => legacyCode}); Object.defineProperty(keyEvent, "which", {get:() => legacyCode}); } catch(e){}
-    target.dispatchEvent(keyEvent);
-    target.dispatchEvent(new win.KeyboardEvent("keyup", {key, code:key === " " ? "Space" : key, bubbles:true, cancelable:true}));
-    if (key === "Enter" && target !== doc.body && target.matches?.("button,a,select,input,[role='button'],[tabindex='0']")) target.click();
-    return true;
-  }catch(e){ return false; }
+  const win = frame?.contentWindow;
+  if (!win) return false;
+  try { win.postMessage({type:"cinenova-player-key", key}, "*"); } catch(e) { return false; }
+  return true;
 };
 
 async function person(id){
@@ -1436,7 +1472,13 @@ window.addEventListener("hashchange", router);
 (async () => {
   hashFromPath();
   const localBrowser = (location.hostname === "127.0.0.1" || location.hostname === "localhost") && !isNativeApp();
-  if (!localBrowser){ try{ const cfg = await fetch("./app-config.json", {headers:{accept:"application/json"}}); if (cfg.ok){ const data = await cfg.json(); if (typeof data.apiBaseUrl === "string" && data.apiBaseUrl.trim()) API_BASE_URL = data.apiBaseUrl.trim().replace(/\/$/, ""); } }catch(e){} }
+  let configData = {};
+  try{
+    const cfg = await fetch("./app-config.json", {headers:{accept:"application/json"}});
+    if (cfg.ok) configData = await cfg.json();
+  }catch(e){}
+  if (!localBrowser && typeof configData.apiBaseUrl === "string" && configData.apiBaseUrl.trim()) API_BASE_URL = configData.apiBaseUrl.trim().replace(/\/$/, "");
+  await applyGatewayConfig(configData);
   try{ await loadGenres(); }catch(e){}
   router();
 })();

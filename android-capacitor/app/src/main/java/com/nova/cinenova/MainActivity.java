@@ -1,5 +1,6 @@
 package com.nova.cinenova;
 
+import android.graphics.Bitmap;
 import android.net.Uri;
 import android.app.UiModeManager;
 import android.content.Context;
@@ -91,6 +92,7 @@ public class MainActivity extends BridgeActivity {
     private String configuredApiHost = "";
     private String configuredGatewayHost = "";
     private CinenovaVault vault;
+    private volatile StreamExtractor activeExtractor;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -599,6 +601,31 @@ public class MainActivity extends BridgeActivity {
 
     /** WebView oculto que captura el primer stream real; nunca reenvía los spots del Gateway. */
     private final class StreamExtractor {
+        private final String itemId;
+        private volatile WebView activeProbe;
+        private volatile CountDownLatch activeLatch;
+
+        StreamExtractor(String itemId) {
+            this.itemId = itemId == null ? "" : itemId;
+        }
+
+        /** Puente JS: detecta manifests y MP4 incluso si la URL no termina en .m3u8. */
+        private String detectionJs() {
+            return "(function(){"
+                + "if(window.__cnVaultHook)return true;window.__cnVaultHook=true;"
+                + "var ITEM=" + JSONObject.quote(itemId) + ";"
+                + "function text(v){return String(v||'').toLowerCase();}"
+                + "function isM3u8(v){return String(v||'').trim().indexOf('#EXTM3U')===0;}"
+                + "function isMediaType(v){v=text(v);return v.indexOf('mpegurl')>=0||v.indexOf('video/mp4')>=0;}"
+                + "function skip(u){u=text(u);return !u||u.indexOf('blob:')===0||u.indexOf('data:')===0||u.indexOf('test-videos.co.uk')>=0||u.indexOf('/v1/stream/segment')>=0;}"
+                + "function report(u){try{if(skip(u))return;CinenovaVault.reportDetectedStream(ITEM,String(u),location.href);}catch(e){}}"
+                + "function maybeText(u,ct,res){var lower=text(u),type=text(ct),len=0;try{len=Number(res.headers.get('content-length'))||0;}catch(e){}if(lower.indexOf('.mp4')>=0||lower.indexOf('.webm')>=0||type.indexOf('video/')>=0||type.indexOf('image/')>=0)return;if(lower.indexOf('.m3u8')>=0||lower.indexOf('playlist')>=0||lower.indexOf('master')>=0||lower.indexOf('manifest')>=0||lower.indexOf('index-')>=0||lower.indexOf('.txt')>=0||type.indexOf('text/plain')>=0||type.indexOf('octet-stream')>=0||!ct||(len>0&&len<1048576)){try{res.clone().text().then(function(body){if(isM3u8(body))report(u);}).catch(function(){});}catch(e){}}}"
+                + "var of=window.fetch;if(typeof of==='function'){window.fetch=function(){var args=arguments;var u=args[0];try{u=typeof u==='string'?u:(u&&u.url)||String(u);}catch(e){}var pending=of.apply(this,args);if(!pending||typeof pending.then!=='function')return pending;return pending.then(function(res){try{var ct=res.headers&&res.headers.get?res.headers.get('content-type'):'';if(isMediaType(ct))report(u);else maybeText(u,ct,res);}catch(e){}return res;});};}"
+                + "var OX=window.XMLHttpRequest;if(OX&&OX.prototype){var oo=OX.prototype.open,os=OX.prototype.send;OX.prototype.open=function(m,u){this.__cnUrl=u;return oo.apply(this,arguments);};OX.prototype.send=function(){var xhr=this;try{xhr.addEventListener('load',function(){try{var ct=xhr.getResponseHeader('content-type')||'';var u=xhr.responseURL||xhr.__cnUrl||'';if(isMediaType(ct)){report(u);}else{var lower=text(u),type=text(ct);if(lower.indexOf('.mp4')<0&&lower.indexOf('.webm')<0&&type.indexOf('video/')<0&&type.indexOf('image/')<0&&(lower.indexOf('.m3u8')>=0||lower.indexOf('playlist')>=0||lower.indexOf('master')>=0||lower.indexOf('manifest')>=0||lower.indexOf('index-')>=0||lower.indexOf('.txt')>=0||type.indexOf('text/plain')>=0||type.indexOf('octet-stream')>=0||!ct)){var body='';try{if(xhr.responseType===''||xhr.responseType==='text')body=xhr.responseText||'';}catch(e){}if(isM3u8(body))report(u);}}}catch(e){}});}catch(e){}return os.apply(this,arguments);};}"
+                + "function silence(){var nodes=document.querySelectorAll('video,audio');for(var i=0;i<nodes.length;i++){try{var el=nodes[i];el.muted=true;el.volume=0;el.removeAttribute('autoplay');el.style.visibility='hidden';}catch(e){}}}"
+                + "document.addEventListener('DOMContentLoaded',silence,true);setInterval(silence,1200);silence();return true;})()";
+        }
+
         private static final String AUTOPLAY_JS = "(function(){"
             + "var sels=['#pbtn','.play-btn','[data-play]','.vjs-big-play-button','.jw-display-icon-container'];"
             + "for(var i=0;i<sels.length;i++){var b=document.querySelector(sels[i]);if(b){try{b.click();}catch(e){}break;}}"
@@ -612,10 +639,13 @@ public class MainActivity extends BridgeActivity {
             final boolean[] destroyed = new boolean[1];
             final StreamInfo[] found = new StreamInfo[1];
             final CountDownLatch latch = new CountDownLatch(1);
+            activeLatch = latch;
             runOnUiThread(() -> {
                 try {
                     WebView probe = new WebView(MainActivity.this);
                     probeHolder[0] = probe;
+                    activeProbe = probe;
+                    if (vault != null) probe.addJavascriptInterface(vault, "CinenovaVault");
                     WebSettings settings = probe.getSettings();
                     settings.setJavaScriptEnabled(true);
                     settings.setDomStorageEnabled(true);
@@ -650,7 +680,14 @@ public class MainActivity extends BridgeActivity {
                         }
 
                         @Override
+                        public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                            try { view.evaluateJavascript(detectionJs(), null); } catch (Exception ignored) {}
+                            super.onPageStarted(view, url, favicon);
+                        }
+
+                        @Override
                         public void onPageFinished(WebView view, String url) {
+                            try { view.evaluateJavascript(detectionJs(), null); } catch (Exception ignored) {}
                             view.postDelayed(autoplay, 1500L);
                             view.postDelayed(autoplay, 3500L);
                         }
@@ -689,8 +726,18 @@ public class MainActivity extends BridgeActivity {
                 Thread.currentThread().interrupt();
                 runOnUiThread(() -> destroyProbe(probeHolder[0]));
                 return null;
+            } finally {
+                activeLatch = null;
             }
             return found[0];
+        }
+
+        void destroyActiveProbe() {
+            WebView probe = activeProbe;
+            activeProbe = null;
+            if (probe != null) runOnUiThread(() -> destroyProbe(probe));
+            CountDownLatch latch = activeLatch;
+            if (latch != null) latch.countDown();
         }
 
         private void capture(WebView view, Uri uri, Map<String, String> headers,
@@ -746,6 +793,7 @@ public class MainActivity extends BridgeActivity {
 
         private void destroyProbe(WebView probe) {
             if (probe == null) return;
+            if (activeProbe == probe) activeProbe = null;
             try { probe.stopLoading(); } catch (Exception ignored) {}
             try {
                 ViewParent parent = probe.getParent();
@@ -970,6 +1018,7 @@ public class MainActivity extends BridgeActivity {
         private final VaultCipher cipher = new VaultCipher(MainActivity.this);
         private final ExecutorService executor = Executors.newCachedThreadPool();
         private final Map<String, DownloadTask> tasks = new HashMap<>();
+        private final Set<String> startedItems = new HashSet<>();
         private final PowerManager.WakeLock wakeLock;
         private JSONObject index = new JSONObject();
         private LocalVaultServer server;
@@ -1142,6 +1191,63 @@ public class MainActivity extends BridgeActivity {
             return array.toString();
         }
 
+        /** Recibe el stream detectado por el WebView oculto y arranca la descarga con Referer. */
+        @JavascriptInterface
+        public void reportDetectedStream(String itemId, String streamUrl, String pageUrl) {
+            if (itemId == null || itemId.isEmpty()) return;
+            String url = streamUrl == null ? "" : streamUrl.trim();
+            String lower = url.toLowerCase(Locale.ROOT);
+            if (lower.startsWith("blob:") || lower.startsWith("data:")
+                || lower.contains("test-videos.co.uk") || lower.contains("/v1/stream/segment")) return;
+            if (!lower.startsWith("http://") && !lower.startsWith("https://")) return;
+            DownloadRecord record = findRecord(itemId);
+            if (record == null) return;
+            StreamInfo info = new StreamInfo();
+            info.url = url;
+            info.referer = pageUrl == null ? "" : pageUrl;
+            info.origin = originOf(info.referer);
+            info.userAgent = VAULT_USER_AGENT;
+            info.streamType = lower.contains(".mp4") && !lower.contains(".m3u8") && !lower.contains("mpegurl")
+                ? "mp4" : "m3u8";
+            StreamExtractor extractor = activeExtractor;
+            beginDetectedDownload(record, info);
+            if (extractor != null) extractor.destroyActiveProbe();
+        }
+
+        private boolean beginDetectedDownload(DownloadRecord record, StreamInfo info) {
+            if (record == null || info == null || info.url == null || info.url.isEmpty()) return false;
+            if (!"downloading".equals(record.status) && !"paused".equals(record.status)) return false;
+            synchronized (this) {
+                if (!startedItems.add(record.itemId)) return false;
+            }
+            try {
+                writeText(new File(new File(vaultDir, record.itemId), "source.json"), info.toJson().toString());
+            } catch (IOException error) {
+                synchronized (this) { startedItems.remove(record.itemId); }
+                markError(record, "source_write_failed");
+                return false;
+            }
+            DownloadTask task = new DownloadTask(record, info, this);
+            synchronized (tasks) { tasks.put(record.itemId, task); }
+            acquireWake();
+            executor.execute(task);
+            return true;
+        }
+
+        private String originOf(String pageUrl) {
+            if (pageUrl == null || pageUrl.isEmpty()) return "";
+            try {
+                Uri uri = Uri.parse(pageUrl);
+                String scheme = uri.getScheme();
+                String host = uri.getHost();
+                if (scheme == null || host == null) return "";
+                int port = uri.getPort();
+                return scheme + "://" + host + (port > 0 ? ":" + port : "");
+            } catch (Exception ignored) {
+                return "";
+            }
+        }
+
         @JavascriptInterface
         public String startDownload(String metadataJson, String embedUrl) {
             try {
@@ -1190,21 +1296,22 @@ public class MainActivity extends BridgeActivity {
                 emitProgress(record, "downloading");
                 final DownloadRecord pending = record;
                 executor.execute(() -> {
-                    StreamInfo info = new StreamExtractor().extract(embedUrl);
-                    if (info == null || info.url == null || info.url.isEmpty()) {
-                        markError(pending, "No se detectó stream reproducible en este servidor");
-                        return;
-                    }
+                    StreamExtractor extractor = new StreamExtractor(itemId);
+                    activeExtractor = extractor;
+                    StreamInfo info;
                     try {
-                        writeText(new File(new File(vaultDir, itemId), "source.json"), info.toJson().toString());
-                    } catch (IOException error) {
-                        markError(pending, "source_write_failed");
+                        info = extractor.extract(embedUrl);
+                    } finally {
+                        if (activeExtractor == extractor) activeExtractor = null;
+                    }
+                    if (info != null && info.url != null && !info.url.isEmpty()) {
+                        beginDetectedDownload(pending, info);
                         return;
                     }
-                    DownloadTask task = new DownloadTask(pending, info, this);
-                    synchronized (tasks) { tasks.put(itemId, task); }
-                    acquireWake();
-                    task.run();
+                    synchronized (this) {
+                        if (startedItems.contains(itemId)) return;
+                    }
+                    markError(pending, "No se detectó stream reproducible en este servidor");
                 });
                 JSONObject accepted = new JSONObject();
                 try {
@@ -1271,6 +1378,7 @@ public class MainActivity extends BridgeActivity {
                     JSONObject data = array.optJSONObject(position);
                     if (data != null && itemId.equals(data.optString("itemId"))) array.remove(position);
                 }
+                startedItems.remove(itemId);
                 saveIndex();
             }
             releaseWakeIfIdle();

@@ -242,6 +242,23 @@ function gateDeviceId(){
   }
   return id;
 }
+function gateSafeUrl(value){
+  const url = String(value || "").trim();
+  return /^https?:\/\//i.test(url) ? url : "";
+}
+function gateFirePixels(urls, fired){
+  (Array.isArray(urls) ? urls : []).forEach(value => {
+    const url = String(value || "");
+    if (!url || fired[url]) return;
+    fired[url] = true;
+    try {
+      const pending = fetch(url, { mode: "no-cors", keepalive: true });
+      if (pending && pending.catch) pending.catch(() => { try { new Image().src = url; } catch(e) {} });
+    } catch(e) {
+      try { new Image().src = url; } catch(e2) {}
+    }
+  });
+}
 async function postGate(path, payload){
   const base = VIDEO_GATEWAY_URL.replace(/\/+$/, "");
   const response = await fetch(base + path, {
@@ -336,24 +353,40 @@ async function runReleaseGate(action, item, onRelease, failureMessage){
     let currentStep = Number(start.currentStep) || 1;
     let totalSteps = Math.max(1, Number(start.totalSteps) || 1);
     let clip = start.clip || {};
+    let activeClip = {};
+    let firedImpressions = {};
+    let firedClicks = {};
     let seconds = Math.max(1, Number(start.skipAfterSeconds) || 5);
     let timer = 0, ready = false, ended = false, advancing = false, settled = false;
     openModal(`<section class="release-gate-modal">
       <h2>${action === "renew" ? "Renovar disponibilidad" : "Preparar descarga"}</h2>
       <p class="muted">Mirá ${action === "renew" ? "1 video" : "los 2 videos"} para continuar.</p>
-      <div class="release-stage"><video id="gateVideo" autoplay playsinline></video>
+      <div class="release-stage"><video id="gateVideo" autoplay playsinline title="Abrir enlace del patrocinador" style="cursor:pointer"></video>
         <div class="release-info"><span id="gateStepLabel">Anuncio 1 de ${totalSteps}</span><span id="gateCountdown">${seconds}s</span></div>
       </div>
+      <a id="gateClick" class="btn ghost" href="#" target="_blank" rel="noopener noreferrer" hidden>Visitar anunciante</a>
       <button id="gateSkip" class="btn primary" type="button" disabled>Saltar anuncio en ${seconds}s</button>
     </section>`, "release-gate-modal", true);
-    const label = $("#gateStepLabel"), counter = $("#gateCountdown"), skip = $("#gateSkip"), video = $("#gateVideo");
+    const label = $("#gateStepLabel"), counter = $("#gateCountdown"), skip = $("#gateSkip"), video = $("#gateVideo"), clickLink = $("#gateClick");
     const stopTimer = () => { if (timer){ clearInterval(timer); timer = 0; } };
     const settle = async (ok, message) => {
       if (settled) return;
-      settled = true; stopTimer(); releaseGateBusy = false; modalLocked = false; closeModal();
+      settled = true; stopTimer(); video.onplaying = null;
+      releaseGateBusy = false; modalLocked = false; closeModal();
       if (message) toast(message);
       resolve(Boolean(ok));
     };
+    const openClip = () => {
+      const destination = gateSafeUrl(activeClip.clickUrl);
+      if (!destination) return;
+      gateFirePixels(activeClip.clickTrackingUrls, firedClicks);
+      try {
+        const opened = window.open(destination, "_blank", "noopener,noreferrer");
+        if (!opened) location.href = destination;
+      } catch(e) { try { location.href = destination; } catch(e2) {} }
+    };
+    video.addEventListener("click", openClip);
+    clickLink.addEventListener("click", event => { event.preventDefault(); openClip(); });
     const advance = async () => {
       if (advancing || !ready || settled) return;
       advancing = true; stopTimer(); skip.disabled = true;
@@ -380,7 +413,19 @@ async function runReleaseGate(action, item, onRelease, failureMessage){
       counter.textContent = `${seconds}s`;
       skip.textContent = `Saltar anuncio en ${seconds}s`;
       skip.disabled = true;
-      video.src = String(clip.url || "");
+      activeClip = clip || {};
+      firedImpressions = {};
+      firedClicks = {};
+      const destination = gateSafeUrl(activeClip.clickUrl);
+      if (destination){
+        clickLink.href = destination;
+        clickLink.hidden = false;
+      } else {
+        clickLink.removeAttribute("href");
+        clickLink.hidden = true;
+      }
+      video.onplaying = () => gateFirePixels(activeClip.impressionUrls, firedImpressions);
+      video.src = String(activeClip.url || "");
       try { video.play?.().catch?.(() => {}); } catch(e) {}
       let remaining = seconds;
       stopTimer();

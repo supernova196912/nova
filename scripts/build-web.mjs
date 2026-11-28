@@ -7,12 +7,14 @@ import { minify } from 'html-minifier-terser';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = path.join(root, 'web');
+const downloadsDir = path.join(source, 'descargas');
 const output = path.join(root, 'dist');
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
 async function copyStatic(from, to) {
   for (const entry of await readdir(from, { withFileTypes: true })) {
-    if (entry.name === '.env' || entry.name.endsWith('.apk') || entry.name.endsWith('.jks') || entry.name === 'build' || entry.name === '.gradle') continue;
+    if (entry.name === '.env' || entry.name.endsWith('.jks') || entry.name === 'build' || entry.name === '.gradle') continue;
+    if (entry.name.toLowerCase().endsWith('.apk') && !(from === downloadsDir || from.startsWith(downloadsDir + path.sep))) continue;
     const src = path.join(from, entry.name), dest = path.join(to, entry.name);
     if (entry.isDirectory()) { await mkdir(dest, { recursive: true }); await copyStatic(src, dest); }
     else if (!['index.html', 'app.js', 'app.css', 'cinenova-mobile-tv.css'].includes(entry.name)) await cp(src, dest);

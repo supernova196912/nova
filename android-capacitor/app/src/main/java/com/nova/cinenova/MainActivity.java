@@ -574,8 +574,11 @@ public class MainActivity extends BridgeActivity {
         String referer;
         String origin;
         String userAgent;
+        String cookie;
         String streamType;
         String manifestText;
+        String segmentUrl;
+        boolean autoSegments;
 
         JSONObject toJson() {
             JSONObject data = new JSONObject();
@@ -584,8 +587,11 @@ public class MainActivity extends BridgeActivity {
                 data.put("referer", referer == null ? "" : referer);
                 data.put("origin", origin == null ? "" : origin);
                 data.put("userAgent", userAgent == null ? "" : userAgent);
+                data.put("cookie", cookie == null ? "" : cookie);
                 data.put("streamType", streamType);
                 data.put("manifestText", manifestText == null ? "" : manifestText);
+                data.put("segmentUrl", segmentUrl == null ? "" : segmentUrl);
+                data.put("autoSegments", autoSegments);
             } catch (Exception ignored) {
                 // No hay valores problemáticos.
             }
@@ -598,8 +604,11 @@ public class MainActivity extends BridgeActivity {
             info.referer = data.optString("referer", "");
             info.origin = data.optString("origin", "");
             info.userAgent = data.optString("userAgent", "");
+            info.cookie = data.optString("cookie", "");
             info.streamType = data.optString("streamType", "mp4");
             info.manifestText = data.optString("manifestText", "");
+            info.segmentUrl = data.optString("segmentUrl", "");
+            info.autoSegments = data.optBoolean("autoSegments", false);
             return info;
         }
     }
@@ -608,14 +617,16 @@ public class MainActivity extends BridgeActivity {
     private final class StreamExtractor {
         private final String itemId;
         private final String fallbackUrl;
+        private final String fallbackUrl2;
         private volatile WebView activeProbe;
         private volatile CountDownLatch activeLatch;
         private volatile boolean detected;
         private final AtomicBoolean captured = new AtomicBoolean(false);
 
-        StreamExtractor(String itemId, String fallbackUrl) {
+        StreamExtractor(String itemId, String fallbackUrl, String fallbackUrl2) {
             this.itemId = itemId == null ? "" : itemId;
             this.fallbackUrl = fallbackUrl == null ? "" : fallbackUrl;
+            this.fallbackUrl2 = fallbackUrl2 == null ? "" : fallbackUrl2;
         }
 
         void markDetected() {
@@ -643,7 +654,7 @@ public class MainActivity extends BridgeActivity {
                 + "var U=win.URL;if(U&&typeof U.createObjectURL==='function'){var ou=U.createObjectURL;U.createObjectURL=function(obj){try{if(obj&&typeof obj.text==='function'){obj.text().then(function(t){reportManifest(win,t,here(win));}).catch(function(){});}}catch(e){}return ou.apply(this,arguments);};}"
                 + "silence(win);}catch(e){}}"
                 + "function installAt(win){try{hookWindow(win);var doc=win.document;var frames=doc.querySelectorAll('iframe,frame');for(var i=0;i<frames.length;i++){try{installAt(frames[i].contentWindow);}catch(e){}}}catch(e){}}"
-                + "if(!window.__cnVaultTimer)window.__cnVaultTimer=setInterval(function(){installAt(window);},400);installAt(window);return true;})()";
+                + "if(!window.__cnVaultTimer)window.__cnVaultTimer=setInterval(function(){installAt(window);},250);installAt(window);return true;})()";
         }
 
         private static final String AUTOPLAY_JS = "(function(){"
@@ -680,16 +691,19 @@ public class MainActivity extends BridgeActivity {
                     ViewGroup root = findViewById(android.R.id.content);
                     root.addView(probe, new FrameLayout.LayoutParams(1, 1));
                     probe.postDelayed(() -> {
-                        if (destroyed[0] || detected) return;
-                        if (fallbackUrl.isEmpty()) {
-                            Log.d("CinenovaVault", "Sin fallback configurado a los 15 s");
-                            return;
-                        }
-                        Log.d("CinenovaVault", "Sin stream a los 15 s; probando tukiplay: " + fallbackUrl);
+                        if (destroyed[0] || detected || fallbackUrl.isEmpty()) return;
+                        Log.d("CinenovaVault", "Sin media a los 12 s; probando tukiplay: " + fallbackUrl);
                         try { probe.loadUrl(fallbackUrl); } catch (Exception error) {
                             Log.d("CinenovaVault", "Fallback tukiplay falló: " + error.getMessage());
                         }
-                    }, 15000L);
+                    }, 12000L);
+                    probe.postDelayed(() -> {
+                        if (destroyed[0] || detected || fallbackUrl2.isEmpty()) return;
+                        Log.d("CinenovaVault", "Sin media a los 24 s; probando 2embed: " + fallbackUrl2);
+                        try { probe.loadUrl(fallbackUrl2); } catch (Exception error) {
+                            Log.d("CinenovaVault", "Fallback 2embed falló: " + error.getMessage());
+                        }
+                    }, 24000L);
                     final Runnable autoplay = () -> {
                         if (destroyed[0]) return;
                         try { probe.evaluateJavascript(AUTOPLAY_JS, null); } catch (Exception ignored) {}
@@ -739,6 +753,10 @@ public class MainActivity extends BridgeActivity {
                                 capture(view, uri, headers, destroyed, found, latch);
                                 return super.shouldInterceptRequest(view, request);
                             }
+                            if (isVideoSegment(uri, headers)) {
+                                captureSegment(view, uri, headers, destroyed, found, latch);
+                                return super.shouldInterceptRequest(view, request);
+                            }
                             WebResourceResponse response = super.shouldInterceptRequest(view, request);
                             if (response != null && isVideoMime(response.getMimeType())) {
                                 capture(view, uri, headers, destroyed, found, latch);
@@ -752,8 +770,8 @@ public class MainActivity extends BridgeActivity {
                 }
             });
             try {
-                if (!latch.await(30, TimeUnit.SECONDS)) {
-                    Log.d("CinenovaVault", "Timeout total de extracción (30 s) para " + itemId);
+                if (!latch.await(36, TimeUnit.SECONDS)) {
+                    Log.d("CinenovaVault", "Timeout total de extracción (36 s) para " + itemId);
                     runOnUiThread(() -> destroyProbe(probeHolder[0]));
                     return null;
                 }
@@ -794,15 +812,89 @@ public class MainActivity extends BridgeActivity {
             runOnUiThread(() -> destroyProbe(view));
         }
 
+        private boolean isExcludedMediaUrl(String url) {
+            return url.contains("test-videos.co.uk") || url.contains("/v1/stream/")
+                || url.contains("doubleclick") || url.contains("googlesyndication")
+                || url.endsWith(".js") || url.endsWith(".css") || url.endsWith(".png")
+                || url.endsWith(".jpg") || url.endsWith(".jpeg") || url.endsWith(".woff")
+                || url.endsWith(".woff2") || url.endsWith(".vtt") || url.endsWith(".html");
+        }
+
+        private boolean isVideoSegment(Uri uri, Map<String, String> headers) {
+            String url = uri.toString().toLowerCase(Locale.ROOT);
+            if (isExcludedMediaUrl(url)) return false;
+            boolean namedSegment = url.contains(".ts") || url.contains(".m4s") || url.contains(".aac")
+                || url.contains("/seg-") || url.contains("/chunk-") || url.contains("/frag-");
+            if (namedSegment) return true;
+            String accept = header(headers, "Accept").toLowerCase(Locale.ROOT);
+            return accept.contains("video/") || accept.contains("application/octet-stream");
+        }
+
+        private void captureSegment(WebView view, Uri uri, Map<String, String> headers,
+                                    boolean[] destroyed, StreamInfo[] found, CountDownLatch latch) {
+            if (destroyed[0] || captured.get()) return;
+            if (!probeSegment(uri.toString(), headers)) return;
+            if (!captured.compareAndSet(false, true)) return;
+            detected = true;
+            Log.d("CinenovaVault", "Auto-HLS: primer segmento válido " + uri);
+            StreamInfo info = new StreamInfo();
+            info.url = uri.toString();
+            info.segmentUrl = uri.toString();
+            info.autoSegments = true;
+            info.referer = header(headers, "Referer");
+            info.origin = header(headers, "Origin");
+            info.cookie = header(headers, "Cookie");
+            String agent = header(headers, "User-Agent");
+            info.userAgent = agent.isEmpty() ? VAULT_USER_AGENT : agent;
+            info.streamType = "m3u8";
+            found[0] = info;
+            destroyed[0] = true;
+            latch.countDown();
+            runOnUiThread(() -> destroyProbe(view));
+        }
+
+        private boolean probeSegment(String url, Map<String, String> headers) {
+            HttpURLConnection link = null;
+            try {
+                link = (HttpURLConnection) new URL(url).openConnection();
+                link.setConnectTimeout(8000);
+                link.setReadTimeout(8000);
+                link.setInstanceFollowRedirects(true);
+                String referer = header(headers, "Referer");
+                String agent = header(headers, "User-Agent");
+                String cookie = header(headers, "Cookie");
+                if (!referer.isEmpty()) link.setRequestProperty("Referer", referer);
+                if (!agent.isEmpty()) link.setRequestProperty("User-Agent", agent);
+                else link.setRequestProperty("User-Agent", VAULT_USER_AGENT);
+                if (!cookie.isEmpty()) link.setRequestProperty("Cookie", cookie);
+                link.setRequestProperty("Range", "bytes=0-1");
+                link.setRequestProperty("Accept", "*/*");
+                int code = link.getResponseCode();
+                if (code != 200 && code != 206) return false;
+                String type = link.getContentType() == null ? "" : link.getContentType().toLowerCase(Locale.ROOT);
+                boolean media = type.contains("video/") || type.contains("octet-stream")
+                    || type.contains("mpegurl") || type.isEmpty();
+                long total = link.getContentLengthLong();
+                String contentRange = link.getHeaderField("Content-Range");
+                if (contentRange != null && contentRange.contains("/")) {
+                    try { total = Long.parseLong(contentRange.substring(contentRange.lastIndexOf('/') + 1)); } catch (Exception ignored) {}
+                }
+                return media && total > 100 * 1024;
+            } catch (Exception ignored) {
+                return false;
+            } finally {
+                if (link != null) link.disconnect();
+            }
+        }
+
         private boolean isRealStream(Uri uri, Map<String, String> headers) {
             String url = uri.toString().toLowerCase(Locale.ROOT);
-            if (url.contains("test-videos.co.uk") || url.contains("/v1/stream/")) return false;
+            if (isExcludedMediaUrl(url)) return false;
             boolean indexManifest = url.contains("index-")
-                && !url.endsWith(".js") && !url.endsWith(".css") && !url.endsWith(".html")
-                && !url.endsWith(".png") && !url.endsWith(".jpg");
-            boolean media = url.contains(".m3u8") || url.contains(".mp4")
-                || url.contains("/manifest") || url.contains("/playlist") || url.contains("/hls/")
-                || url.contains("master.txt") || indexManifest;
+                && !url.endsWith(".html");
+            boolean media = url.contains(".m3u8") || url.contains(".mp4") || url.contains(".mkv")
+                || url.contains(".webm") || url.contains("/master") || url.contains("/manifest")
+                || url.contains("/playlist") || url.contains("/hls/") || url.contains("master.txt") || indexManifest;
             if (!media) {
                 String accept = header(headers, "Accept").toLowerCase(Locale.ROOT);
                 media = isVideoMime(accept);
@@ -1365,20 +1457,27 @@ public class MainActivity extends BridgeActivity {
                 emitProgress(record, "downloading", "extracting");
                 final DownloadRecord pending = record;
                 String fallbackUrl = "";
+                String fallbackUrl2 = "";
                 try {
                     Uri embed = Uri.parse(embedUrl);
                     String scheme = embed.getScheme();
                     String authority = embed.getAuthority();
                     if (scheme != null && authority != null) {
-                        String fallbackPath = "tv".equals(mediaType)
+                        String origin = scheme + "://" + authority;
+                        String tukiPath = "tv".equals(mediaType)
                             ? "/p/tukiplay/embed/tv/" + tmdbId + "/" + season + "/" + episode
                             : "/p/tukiplay/embed/movie/" + tmdbId;
-                        fallbackUrl = scheme + "://" + authority + fallbackPath;
+                        String embedPath = "tv".equals(mediaType)
+                            ? "/p/2embed/embed/tv/" + tmdbId + "/" + season + "/" + episode
+                            : "/p/2embed/embed/" + tmdbId;
+                        fallbackUrl = origin + tukiPath;
+                        fallbackUrl2 = origin + embedPath;
                     }
                 } catch (Exception ignored) {}
                 final String fallback = fallbackUrl;
+                final String fallback2 = fallbackUrl2;
                 executor.execute(() -> {
-                    StreamExtractor extractor = new StreamExtractor(itemId, fallback);
+                    StreamExtractor extractor = new StreamExtractor(itemId, fallback, fallback2);
                     activeExtractor = extractor;
                     StreamInfo info;
                     try {
@@ -1667,6 +1766,7 @@ public class MainActivity extends BridgeActivity {
                 ? VAULT_USER_AGENT : info.userAgent);
             if (info.referer != null && !info.referer.isEmpty()) link.setRequestProperty("Referer", info.referer);
             if (info.origin != null && !info.origin.isEmpty()) link.setRequestProperty("Origin", info.origin);
+            if (info.cookie != null && !info.cookie.isEmpty()) link.setRequestProperty("Cookie", info.cookie);
             link.setRequestProperty("Accept", "*/*");
             return link;
         }
@@ -1728,6 +1828,7 @@ public class MainActivity extends BridgeActivity {
         }
 
         private void downloadHls(File directory) throws IOException {
+            if (info.autoSegments) { downloadAutoHls(directory); return; }
             boolean embedded = info.manifestText != null && !info.manifestText.isEmpty();
             String playlist = embedded ? info.manifestText : fetchText(info.url);
             String baseUrl = info.url;
@@ -1801,6 +1902,77 @@ public class MainActivity extends BridgeActivity {
                 localPlaylist.toString().getBytes(StandardCharsets.UTF_8));
             record.streamType = "m3u8";
             if (record.totalBytes <= 0) record.totalBytes = record.bytesDownloaded;
+        }
+
+        private void downloadAutoHls(File directory) throws IOException {
+            String first = info.segmentUrl == null || info.segmentUrl.isEmpty() ? info.url : info.segmentUrl;
+            int queryAt = first.indexOf('?');
+            String query = queryAt >= 0 ? first.substring(queryAt) : "";
+            String base = queryAt >= 0 ? first.substring(0, queryAt) : first;
+            Matcher matcher = Pattern.compile("^(.*?)(\\d+)([^\\d]*)$").matcher(base);
+            if (!matcher.find()) throw new IOException("Segmento HLS sin numeración");
+            String prefix = matcher.group(1);
+            String digits = matcher.group(2);
+            String suffix = matcher.group(3);
+            int start = Integer.parseInt(digits);
+            int width = digits.length();
+            List<String> lines = new ArrayList<>();
+            lines.add("#EXTM3U");
+            lines.add("#EXT-X-VERSION:3");
+            lines.add("#EXT-X-TARGETDURATION:10");
+            lines.add("#EXT-X-MEDIA-SEQUENCE:0");
+            int index = 0;
+            long last = System.currentTimeMillis();
+            for (int number = start; number < start + 3000; number += 1) {
+                if (cancelled) return;
+                String formatted = String.format(Locale.ROOT, "%0" + width + "d", number);
+                String url = prefix + formatted + suffix + query;
+                byte[] segment = fetchBytesOptional(url);
+                if (segment == null || segment.length == 0) break;
+                String name = String.format(Locale.ROOT, "seg_%05d.ts", index++);
+                owner.cipher.writeEncrypted(new File(directory, name + ".cnv"), segment);
+                lines.add("#EXTINF:1.0,");
+                lines.add(name);
+                record.bytesDownloaded += segment.length;
+                record.totalBytes = Math.max(record.totalBytes, record.bytesDownloaded);
+                record.progress = Math.min(99, index);
+                long now = System.currentTimeMillis();
+                if (now - last >= 500) {
+                    owner.syncRecord(record);
+                    owner.emitProgress(record, "downloading", "downloading");
+                    last = now;
+                }
+            }
+            if (index == 0) throw new IOException("Secuencia HLS sin segmentos");
+            lines.add("#EXT-X-ENDLIST");
+            StringBuilder playlist = new StringBuilder();
+            for (String line : lines) playlist.append(line).append('\n');
+            owner.cipher.writeEncrypted(new File(directory, "index.m3u8.cnv"),
+                playlist.toString().getBytes(StandardCharsets.UTF_8));
+            record.streamType = "m3u8";
+            if (record.totalBytes <= 0) record.totalBytes = record.bytesDownloaded;
+        }
+
+        private byte[] fetchBytesOptional(String url) throws IOException {
+            HttpURLConnection link = openConnection(url);
+            connection = link;
+            int code = link.getResponseCode();
+            if (code >= 400 && code < 500) return null;
+            if (code < 200 || code >= 300) throw new IOException("HTTP " + code);
+            InputStream stream = link.getInputStream();
+            inputStream = stream;
+            java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+            byte[] buffer = new byte[16384];
+            int read;
+            while ((read = stream.read(buffer)) != -1) {
+                if (cancelled) break;
+                output.write(buffer, 0, read);
+            }
+            try { stream.close(); } catch (Exception ignored) {}
+            try { link.disconnect(); } catch (Exception ignored) {}
+            if (connection == link) connection = null;
+            if (inputStream == stream) inputStream = null;
+            return output.toByteArray();
         }
 
         private byte[] fetchBytes(String url) throws IOException {

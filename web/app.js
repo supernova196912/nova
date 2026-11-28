@@ -1152,9 +1152,11 @@ function startDetailPlayback(id, type, season = 1, episode = 1, metadata = {}){
   if (overlayPlayback){
     $(".app-player-overlay")?.remove();
     const player = document.createElement("div"); player.className = "player-frame player-fullscreen app-player-overlay"; player.id = `player-${id}`;
+    player.dataset.gatewayPlayer = gatewaySrc ? "1" : "0";
     const frame = document.createElement("iframe");
     frame.title = "Reproductor de video"; frame.tabIndex = 0; frame.width = "100%"; frame.height = "100%"; frame.setAttribute("frameborder", "0"); frame.allowFullscreen = true;
     frame.allow = "autoplay; fullscreen; picture-in-picture; encrypted-media; remote-playback"; frame.referrerPolicy = "origin";
+    frame.dataset.gatewayPlayer = gatewaySrc ? "1" : "0";
     const loader = createPlayerLoader(src, player);
     frame.addEventListener("load", () => { schedulePlayerLoaderRemoval(loader); sendPlayerContext(frame); focusPlayerFrame(frame, true); showPlayerHud(); }, {once:true});
     frame.addEventListener("error", () => { playerDebugErrors.push("Error al cargar el iframe: " + src); schedulePlayerLoaderRemoval(loader); showPlayerDebugInfo(player, src); }, {once:true});
@@ -1163,6 +1165,8 @@ function startDetailPlayback(id, type, season = 1, episode = 1, metadata = {}){
   }
   const player = document.getElementById(`player-${id}`), frame = player?.querySelector("iframe");
   if (!player || !frame) return;
+  player.dataset.gatewayPlayer = gatewaySrc ? "1" : "0";
+  frame.dataset.gatewayPlayer = gatewaySrc ? "1" : "0";
   if (frame.dataset.loadedSrc !== src){
     frame.dataset.loadedSrc = src;
     if (overlayPlayback){
@@ -1211,6 +1215,7 @@ function createPlayerHud(player, frame){
     try { frame?.contentWindow?.postMessage({type:"cinenova-player-exit-focus"}, "*"); } catch(e){}
     exitPlayerFullscreen();
   });
+  if (isTvMode && player.dataset.gatewayPlayer === "1") { exit.hidden = true; exit.tabIndex = -1; exit.setAttribute("aria-hidden", "true"); }
   hud.append(cc, exit); player.append(hud);
 }
 function showPlayerDebugInfo(player, src){
@@ -1298,6 +1303,10 @@ async function playFollowingEpisode(){
 function focusPlayerFrame(frame, autoplay = false){
   try{
     frame.focus({preventScroll:true}); const win = frame.contentWindow;
+    if (frame.dataset.gatewayPlayer === "1"){
+      try { win?.postMessage({type:"cinenova-show-controls"}, "*"); } catch(e){}
+      return;
+    }
     let doc; try { doc = frame.contentDocument; } catch(e) { doc = null; }
     win?.postMessage({type:autoplay ? "cinenova-player-autoplay" : "cinenova-player-focus"}, "*");
     if (!doc) return;
@@ -1394,12 +1403,17 @@ function handlePlayerHudKey(key, player, event){
   return true;
 }
 window.cinenovaForwardPlayerKey = key => {
+  const player = $(".player-frame.player-fullscreen");
+  const gatewayFrame = player?.dataset.gatewayPlayer === "1" ? $("iframe", player) : null;
+  if (["Escape","Backspace","BrowserBack"].includes(key) && player){ exitPlayerFullscreen(); return true; }
   if (!["Escape","Backspace","BrowserBack"].includes(key)) lastPlayerBackTime = 0;
-  if (["Escape","Backspace","BrowserBack"].includes(key) && $(".player-frame.player-fullscreen")) return handlePlayerBack();
   const keyForEmbed = ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter"," ","MediaPlayPause"].includes(key) ? key : undefined;
+  if (gatewayFrame && keyForEmbed){
+    try { gatewayFrame.contentWindow?.postMessage({type:"cinenova-player-key", key:keyForEmbed}, "*"); } catch(e){ return false; }
+    return true;
+  }
   showPlayerHud(keyForEmbed);
   activateNativeTvMode();
-  const player = $(".player-frame.player-fullscreen");
   if (player && handlePlayerHudKey(key, player)) return true;
   if (player && handleFullscreenPlayerKey(key, player)) return true;
   const frame = $(".app-player-overlay iframe, .player-frame.player-fullscreen iframe");
@@ -1672,6 +1686,18 @@ const suppressFullscreenSpace = e => {
 window.addEventListener("keydown", suppressFullscreenSpace, true);
 window.addEventListener("keyup", suppressFullscreenSpace, true);
 window.addEventListener("keydown", e => {
+  const fullscreenPlayer = $(".player-frame.player-fullscreen");
+  if (fullscreenPlayer && ["Escape","Backspace"].includes(e.key)){
+    e.preventDefault(); e.stopImmediatePropagation(); exitPlayerFullscreen(); return;
+  }
+  if (fullscreenPlayer?.dataset.gatewayPlayer === "1"){
+    const gatewayKey = ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter"," ","MediaPlayPause"].includes(e.key) ? e.key : undefined;
+    if (gatewayKey){
+      e.preventDefault(); e.stopImmediatePropagation();
+      $("iframe", fullscreenPlayer)?.contentWindow?.postMessage({type:"cinenova-player-key", key:gatewayKey}, "*");
+      return;
+    }
+  }
   if (!["Escape","Backspace","BrowserBack"].includes(e.key)) lastPlayerBackTime = 0;
   if ($(".player-frame.player-fullscreen")) {
     const keyForEmbed = ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter"," ","MediaPlayPause"].includes(e.key) ? e.key : undefined;
